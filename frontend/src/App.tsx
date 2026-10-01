@@ -35,20 +35,20 @@ function App() {
     }
   }, [screens]);
 
-  if (loading) return <div>Loading...</div>;
+  if (loading) return <div className="flex items-center justify-center h-screen">Loading...</div>;
 
   return (
-    <div>
-      <h1>Design Tool Viewer</h1>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px' }}>
+    <div className="w-full bg-[#fdfcfa] min-h-screen p-8">
+      <h1 className="text-4xl font-bold mb-8">Design Tool Viewer</h1>
+      <div className="grid grid-cols-2 gap-6">
         {screens.map((screen) => (
-          <div key={screen.id}>
-            <h3>{screen.name}</h3>
+          <div key={screen.id} className="flex flex-col">
+            <h3 className="text-lg font-semibold mb-2">{screen.name}</h3>
             <iframe
               src={screen.url}
               width="1280"
               height="800"
-              style={{ border: '1px solid #ccc' }}
+              className="border border-gray-300 rounded"
             />
           </div>
         ))}
