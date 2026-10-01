@@ -51,3 +51,29 @@
     - Now: old requests reject immediately with "Navigation: page changed". New page gets a fresh start.
 
 - PING now includes an ID so the handshake test also uses the request/response protocol.
+
+## Commit 6: f90a95d4dbb9689e64b477a0ab3d6c2169ab5162
+
+- Track pending requests per iframe, not globally.
+    - Navigation on preview 3 was canceling preview 7's requests because the map was global.
+    - Each iframe now has its own request queue. Navigation only affects that iframe.
+
+- Query iframes dynamically in handleHandshake, not from a pre-built list.
+    - Early hellos arrived before the iframes array was populated, so handleHandshake found nothing and never sent AGENT_READY.
+    - Now it queries all iframes on each message, so it finds the source regardless of timing.
+
+- Render "Couldn't connect" error overlay in UI with a retry button.
+    - The 10s timeout logged to console but showed nothing to the user.
+    - Added error tracking in React state, poll every 500ms, display overlay when timeout fires.
+
+- Clean up message listener and setup timeout on unmount/hot reload.
+    - Hot reloads were adding duplicate listeners without removing the old ones, causing multiple MessageChannels.
+    - Return cleanup function that removes listener and clears timeout.
+
+- Generate dynamic docId per page load instead of hardcoding.
+    - Hardcoded `data-doc-id="page-1"` makes it impossible to tell navigation (new document) from reload (same page, new load).
+    - Now: `${url}-${timestamp}-${random}`. Navigation creates new document with new docId.
+
+- Agent stops retrying hello after AGENT_READY arrives.
+    - Was retrying every 100ms indefinitely even after connection succeeded, spamming the console.
+    - Added `connected` flag that stops the retry interval when AGENT_READY is received.
