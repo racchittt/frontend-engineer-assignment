@@ -29,9 +29,6 @@ function handleHandshake(event: MessageEvent<Message>) {
   if (!sourceIframe) return; //check if safe iframe
 
   if (event.data.type === 'AGENT_HELLO') {
-  if (!sourceIframe) return;
-
-  if (event.data.type === 'AGENT_HELLO') {
     const docId = event.data.docId;
     console.log(`Agent said hello from ${docId}`);
 
@@ -54,7 +51,7 @@ function handleHandshake(event: MessageEvent<Message>) {
     channel.port1.postMessage({ type: 'PING' });
   }
 }
-}
+
 
 function handleAgentMessage(iframe: HTMLIFrameElement, event: MessageEvent) {
   console.log('Received from agent:', event.data);
