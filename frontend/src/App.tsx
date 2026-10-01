@@ -28,12 +28,10 @@ function App() {
     load();
   }, []);
 
-  // Initialize agent communication after iframes are mounted
+  // Initialize agent listener immediately
   useEffect(() => {
-    if (screens.length > 0) {
-      setTimeout(() => initAgent(), 100); // Let iframes load first
-    }
-  }, [screens]);
+    return initAgent();
+  }, []);
 
   if (loading) return <div className="flex items-center justify-center h-screen">Loading...</div>;
 

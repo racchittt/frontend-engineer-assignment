@@ -8,35 +8,44 @@ interface PendingRequest {
   reject: (error: Error) => void;
 }
 
-const iframeMap = new Map<HTMLIFrameElement, MessagePort>(); // Map iframe → docId
-const pendingRequests = new Map<string, PendingRequest>();
+const iframeMap = new Map<HTMLIFrameElement, MessagePort>();
+const pendingRequestsPerIframe = new Map<HTMLIFrameElement, Map<string, PendingRequest>>();
 const REQUEST_TIMEOUT = 3000;
-const PAGES_ORIGIN = "http://localhost:4001"; // Pages come from here
+const PAGES_ORIGIN = "http://localhost:4001";
 let iframes: HTMLIFrameElement[] = [];
 
-export async function initAgent() {
-  iframes = Array.from(document.querySelectorAll('iframe'));
-  console.log(`Found ${iframes.length} iframes`);
-
-  // Listen for AGENT_HELLO handshake
+export function initAgent() {
+  // Attach listener immediately (before iframes load)
   window.addEventListener('message', handleHandshake);
 
-  // Start timeout for any iframe that doesn't connect
-  iframes.forEach((iframe) => {
-    setTimeout(() => {
-      if (!iframeMap.has(iframe)) {
-        console.error('Timeout: agent not connected after 10s');
-        // TODO: Show "Couldn't connect" error on that preview
-      }
-    }, 10000);
-  });
+  // Query for iframes after a tick (let React render them)
+  setTimeout(() => {
+    const newIframes = Array.from(document.querySelectorAll('iframe'));
+    iframes = newIframes;
+    console.log(`Found ${iframes.length} iframes`);
+
+    // Start timeout for any iframe that doesn't connect
+    iframes.forEach((iframe) => {
+      setTimeout(() => {
+        if (!iframeMap.has(iframe)) {
+          console.error('Timeout: agent not connected after 10s');
+          // TODO: Show "Couldn't connect" error on that preview
+        }
+      }, 10000);
+    });
+  }, 0);
+
+  // Return cleanup function (removes listener on hot reload)
+  return () => {
+    window.removeEventListener('message', handleHandshake);
+  };
 }
 
 function handleHandshake(event: MessageEvent<Message>) {
-  if (event.origin !== PAGES_ORIGIN) return; //check if safe origin
+  if (event.origin !== PAGES_ORIGIN) return;
 
   const sourceIframe = iframes.find((i) => i.contentWindow === event.source);
-  if (!sourceIframe) return; //check if safe iframe
+  if (!sourceIframe) return;
 
   if (event.data.type === 'AGENT_HELLO') {
     const docId = event.data.docId;
@@ -45,16 +54,21 @@ function handleHandshake(event: MessageEvent<Message>) {
     const oldPort = iframeMap.get(sourceIframe);
     if (oldPort) {
       console.log(`Navigation detected on ${docId}. Canceling pending requests.`);
-      // Find all requests from this iframe and reject them
-      pendingRequests.forEach((req, id) => {
-        if (req.type !== 'ORPHANED') { // Mark as orphaned
+      // Cancel only this iframe's pending requests
+      const oldRequests = pendingRequestsPerIframe.get(sourceIframe);
+      if (oldRequests) {
+        oldRequests.forEach((req) => {
           clearTimeout(req.timeout);
           req.reject(new Error('Navigation: page changed'));
-          pendingRequests.delete(id);
-        }
-      });
+        });
+        oldRequests.clear();
+      }
       oldPort.close();
     }
+
+    // Initialize fresh request map for this iframe
+    pendingRequestsPerIframe.set(sourceIframe, new Map());
+
     // Create MessageChannel for this iframe
     const channel = new MessageChannel();
     iframeMap.set(sourceIframe, channel.port1);
@@ -78,16 +92,19 @@ function handleHandshake(event: MessageEvent<Message>) {
 
 
 function handleAgentMessage(iframe: HTMLIFrameElement, event: MessageEvent) {
-  const { id, type } = event.data;
+  const { id } = event.data;
   console.log('Received from agent:', event.data);
 
   if (id) {
-    // This is a response to a request
-    const pending = pendingRequests.get(id);
-    if (pending) {
-      clearTimeout(pending.timeout);
-      pending.resolve(event.data);
-      pendingRequests.delete(id);
+    // This is a response to a request — look it up in this iframe's queue
+    const iframeRequests = pendingRequestsPerIframe.get(iframe);
+    if (iframeRequests) {
+      const pending = iframeRequests.get(id);
+      if (pending) {
+        clearTimeout(pending.timeout);
+        pending.resolve(event.data);
+        iframeRequests.delete(id);
+      }
     }
   }
 
@@ -113,16 +130,19 @@ export async function queryAgent(
   const port = iframeMap.get(iframe);
   if (!port) throw new Error('Agent not connected');
 
+  const iframeRequests = pendingRequestsPerIframe.get(iframe);
+  if (!iframeRequests) throw new Error('No request queue for this iframe');
+
   const id = `${Date.now()}-${Math.random()}`;
   const request = { id, type, ...payload };
 
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
-      pendingRequests.delete(id);
+      iframeRequests.delete(id);
       reject(new Error(`Request timeout: ${type}`));
     }, REQUEST_TIMEOUT);
 
-    pendingRequests.set(id, { id, type, timeout, resolve, reject });
+    iframeRequests.set(id, { id, type, timeout, resolve, reject });
     port.postMessage(request);
   });
 }

@@ -1,4 +1,4 @@
-console.log("Hellow world");
+console.log("Agent loading...");
 
 (function() {
   const currentScript = document.currentScript;
@@ -6,18 +6,26 @@ console.log("Hellow world");
 
   const HOST_ORIGIN = 'http://localhost:5173';
   let agentPort = null;
+  let helloInterval = null;
 
-  // respond with hello
-  if (window.parent && window.parent !== window) {
-    window.parent.postMessage(
-      { type: 'AGENT_HELLO', docId },
-      HOST_ORIGIN
-    );
-    console.log(`[${docId}] Sent AGENT_HELLO`);
+  // Retry hello until AGENT_READY arrives
+  function sayHello() {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage(
+        { type: 'AGENT_HELLO', docId },
+        HOST_ORIGIN
+      );
+      console.log(`[${docId}] Sent AGENT_HELLO`);
+    }
   }
 
+  // Say hello immediately
+  sayHello();
 
-  // recieve message from MessagePort from host
+  // Retry every 100ms until we get AGENT_READY
+  helloInterval = setInterval(sayHello, 100);
+
+  // Listen for AGENT_READY from host
   window.addEventListener('message', (event) => {
     if (event.origin !== HOST_ORIGIN) {
       console.warn('Rejected: untrusted origin', event.origin);
@@ -25,6 +33,7 @@ console.log("Hellow world");
     }
 
     if (event.data.type === 'AGENT_READY' && event.ports[0]) {
+      clearInterval(helloInterval);
       agentPort = event.ports[0];
       agentPort.onmessage = handlePortMessage;
       agentPort.start();
