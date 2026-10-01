@@ -22,7 +22,7 @@ console.log("Agent loading...");
   }
 
   // Say hello immediately
-  sayHello();
+  // sayHello();
 
   // Retry every 100ms until we get AGENT_READY
   helloInterval = setInterval(sayHello, 100);
@@ -71,4 +71,4 @@ console.log("Agent loading...");
   }
 
   window.agentPort = agentPort; // for debugging
-})();
+})(); 

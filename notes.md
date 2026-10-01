@@ -77,3 +77,33 @@
 - Agent stops retrying hello after AGENT_READY arrives.
     - Was retrying every 100ms indefinitely even after connection succeeded, spamming the console.
     - Added `connected` flag that stops the retry interval when AGENT_READY is received.
+
+
+## Commit 7: a75a4db4910bab3dde9c89ea1b59a728bd0e362a
+
+- "Couldn't connect" overlay never showed up, fixed.
+    - The 10s timer was created in `initAgent`, but App renders "Loading..." first, so there were 0 iframes at that point.
+    - Also a dead agent never says hello, so a timer started on hello can never fire.
+    - Now each iframe starts its own 10s timer from its ref callback (`watchIframe`). It doesn't depend on the agent at all.
+    - A late hello still clears the error.
+
+- Host now stores the `docId` per iframe to tell a retried hello from a navigation.
+    - Before, every retried hello hit the "Navigation detected" branch, closing the port and rejecting pending requests.
+    - Same docId = same document retrying, ignore it. Different docId with an open port = navigation, tear down.
+
+- Agent side guards.
+    - A second AGENT_READY is ignored, the first port stays.
+    - Hello gives up after 100 tries (~10s) instead of running forever.
+
+- Replaced the 500ms polling with a subscription.
+    - `agent.ts` exposes `onErrorChange`, and only notifies when an error really changes.
+    - The board no longer re-renders twice a second for nothing.
+
+- Retry button reloads only that preview.
+    - It used to reload the whole host and all 24 iframes.
+    - `retryIframe` closes that port, clears the error, restarts the timer and reloads that one iframe.
+
+- Per document MessagePort is better because two way communication between each document can be established and then you can interact with each of the different docs individually rather than overloading the same agent
+
+- Navigation doesn't wait for the 3s timeout. When the new document says hello with a different docId, teardown() rejects that iframe's pending requests immediately with "Navigation: page changed", then closes the old port.
+- docId is how the host tells "same document retrying hello" (ignore) from "new document" (tear down).

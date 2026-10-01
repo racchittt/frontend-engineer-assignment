@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { initAgent, getIframeError } from './agent/agent';
+import { initAgent, getIframeError, watchIframe, onErrorChange, retryIframe } from './agent/agent';
 
 interface Screen {
   id: string;
@@ -34,18 +34,18 @@ function App() {
   useEffect(() => {
     const cleanup = initAgent();
 
-    // Poll for error state changes to trigger re-renders
-    const errorCheckInterval = setInterval(() => {
+    // Agent tells us when an error changes, no polling
+    const unsubscribe = onErrorChange(() => {
       const newErrors = new Map<string, string | null>();
       iframeRefs.current.forEach((iframe, screenId) => {
         newErrors.set(screenId, getIframeError(iframe));
       });
       setPreviewErrors(newErrors);
-    }, 500);
+    });
 
     return () => {
       cleanup?.();
-      clearInterval(errorCheckInterval);
+      unsubscribe();
     };
   }, []);
 
@@ -64,7 +64,10 @@ function App() {
               <div className="relative">
                 <iframe
                   ref={(el) => {
-                    if (el) iframeRefs.current.set(screen.id, el);
+                    if (el) {
+                      iframeRefs.current.set(screen.id, el);
+                      watchIframe(el);
+                    }
                   }}
                   src={screen.url}
                   width="1280"
@@ -76,7 +79,10 @@ function App() {
                     <div className="bg-white p-6 rounded-lg text-center">
                       <p className="text-red-600 font-semibold mb-4">{error}</p>
                       <button
-                        onClick={() => window.location.reload()}
+                        onClick={() => {
+                          const el = iframeRefs.current.get(screen.id);
+                          if (el) retryIframe(el);
+                        }}
                         className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
                       >
                         Retry
