@@ -34,13 +34,22 @@ console.log("Hellow world");
 
   // ping-pong 
   function handlePortMessage(event) {
-    const { type } = event.data;
+    const { id, type } = event.data;
     console.log(`[${docId}] Received:`, type);
 
     if (type === 'PING') {
-      agentPort.postMessage({ type: 'PONG' });
+      agentPort.postMessage({ id, type: 'PONG' });
       console.log(`[${docId}] Sent PONG`);
     }
+
+    if (type === 'QUERY_ELEMENT') {
+    const element = document.querySelector(`[data-key="${event.data.elementKey}"]`);
+    agentPort.postMessage({
+      id, // Echo the ID back
+      type: 'ELEMENT_DATA',
+      data: { /* ... */ }
+    });
+  }
   }
 
   window.agentPort = agentPort; // for debugging
