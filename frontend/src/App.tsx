@@ -1,7 +1,8 @@
+import { useEffect } from 'react';
+import { initAgent, } from './agent/agent';
 import './App.css'
-
 function App() {
-
+  useEffect(() => {initAgent()}, []);
   return (
     <div>
       <h1>Welcome to Figr</h1>
