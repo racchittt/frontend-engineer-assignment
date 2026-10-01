@@ -1,16 +1,18 @@
 console.log("Agent loading...");
 
 (function() {
-  const currentScript = document.currentScript;
-  const docId = currentScript ? currentScript.getAttribute('data-doc-id') : Date.now().toString();
+  // Generate unique docId for this page load
+  // Navigation creates a new document with a new docId
+  const docId = `${window.location.href}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
   const HOST_ORIGIN = 'http://localhost:5173';
   let agentPort = null;
   let helloInterval = null;
+  let connected = false;
 
   // Retry hello until AGENT_READY arrives
   function sayHello() {
-    if (window.parent && window.parent !== window) {
+    if (!connected && window.parent && window.parent !== window) {
       window.parent.postMessage(
         { type: 'AGENT_HELLO', docId },
         HOST_ORIGIN
@@ -27,17 +29,24 @@ console.log("Agent loading...");
 
   // Listen for AGENT_READY from host
   window.addEventListener('message', (event) => {
+    console.log(`[${docId}] Received message:`, event.data.type, 'from origin:', event.origin);
+
     if (event.origin !== HOST_ORIGIN) {
-      console.warn('Rejected: untrusted origin', event.origin);
+      console.warn(`[${docId}] Rejected: untrusted origin ${event.origin}, expected ${HOST_ORIGIN}`);
       return;
     }
 
-    if (event.data.type === 'AGENT_READY' && event.ports[0]) {
-      clearInterval(helloInterval);
-      agentPort = event.ports[0];
-      agentPort.onmessage = handlePortMessage;
-      agentPort.start();
-      console.log(`[${docId}] Got MessagePort, ready to communicate`);
+    if (event.data.type === 'AGENT_READY') {
+      console.log(`[${docId}] AGENT_READY received, ports:`, event.ports.length);
+      if (event.ports[0]) {
+        connected = true;
+        clearInterval(helloInterval);
+        console.log(`[${docId}] Cleared hello interval, connected = true`);
+        agentPort = event.ports[0];
+        agentPort.onmessage = handlePortMessage;
+        agentPort.start();
+        console.log(`[${docId}] Got MessagePort, ready to communicate`);
+      }
     }
   });
 

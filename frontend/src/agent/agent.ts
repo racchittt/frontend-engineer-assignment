@@ -10,46 +10,67 @@ interface PendingRequest {
 
 const iframeMap = new Map<HTMLIFrameElement, MessagePort>();
 const pendingRequestsPerIframe = new Map<HTMLIFrameElement, Map<string, PendingRequest>>();
+const iframeTimeouts = new Map<HTMLIFrameElement, ReturnType<typeof setTimeout>>();
+const iframeErrors = new Map<HTMLIFrameElement, string | null>(); // null = no error, string = error message
 const REQUEST_TIMEOUT = 3000;
 const PAGES_ORIGIN = "http://localhost:4001";
 let iframes: HTMLIFrameElement[] = [];
+
+export function getIframeError(iframe: HTMLIFrameElement): string | null {
+  return iframeErrors.get(iframe) || null;
+}
 
 export function initAgent() {
   // Attach listener immediately (before iframes load)
   window.addEventListener('message', handleHandshake);
 
   // Query for iframes after a tick (let React render them)
-  setTimeout(() => {
+  const setupTimeout = setTimeout(() => {
     const newIframes = Array.from(document.querySelectorAll('iframe'));
     iframes = newIframes;
     console.log(`Found ${iframes.length} iframes`);
 
     // Start timeout for any iframe that doesn't connect
     iframes.forEach((iframe) => {
-      setTimeout(() => {
+      const timeout = setTimeout(() => {
         if (!iframeMap.has(iframe)) {
-          console.error('Timeout: agent not connected after 10s');
-          // TODO: Show "Couldn't connect" error on that preview
+          const errorMsg = 'Couldn\'t connect to this preview';
+          console.error(`Timeout: ${errorMsg}`);
+          iframeErrors.set(iframe, errorMsg);
+          iframeTimeouts.delete(iframe);
         }
       }, 10000);
+      iframeTimeouts.set(iframe, timeout);
     });
   }, 0);
 
   // Return cleanup function (removes listener on hot reload)
   return () => {
     window.removeEventListener('message', handleHandshake);
+    clearTimeout(setupTimeout);
   };
 }
 
 function handleHandshake(event: MessageEvent<Message>) {
   if (event.origin !== PAGES_ORIGIN) return;
 
-  const sourceIframe = iframes.find((i) => i.contentWindow === event.source);
+  // Find the iframe that sent this message (search all, not just cached list)
+  const allIframes = Array.from(document.querySelectorAll('iframe'));
+  const sourceIframe = allIframes.find((i) => i.contentWindow === event.source);
   if (!sourceIframe) return;
 
   if (event.data.type === 'AGENT_HELLO') {
     const docId = event.data.docId;
     console.log(`Agent said hello from ${docId}`);
+
+    // Clear the connection timeout for this iframe
+    const oldTimeout = iframeTimeouts.get(sourceIframe);
+    if (oldTimeout) {
+      clearTimeout(oldTimeout);
+      iframeTimeouts.delete(sourceIframe);
+    }
+    // Mark as connected (no error)
+    iframeErrors.set(sourceIframe, null);
 
     const oldPort = iframeMap.get(sourceIframe);
     if (oldPort) {
@@ -74,6 +95,7 @@ function handleHandshake(event: MessageEvent<Message>) {
     iframeMap.set(sourceIframe, channel.port1);
 
     // Send the other port to the agent
+    console.log(`Sending AGENT_READY to ${docId}`);
     sourceIframe.contentWindow?.postMessage(
       { type: 'AGENT_READY', port: channel.port2 },
       PAGES_ORIGIN,
