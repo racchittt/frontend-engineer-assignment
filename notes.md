@@ -130,3 +130,40 @@
     - While panning, iframes get `pointer-events: none`. It's turned off again only in `endDrag` (pointer up or cancel).
     - Also used `setPointerCapture` on the board as a backup.
     - Retry button stops `pointerdown` from bubbling, so clicking it doesn't start a pan.
+
+## Commit 9: 
+
+- Select mode blocks the page from inside the page, not with a shield over the iframe.
+    - The agent adds capture phase listeners on `window` (pointerdown, mousedown, click, focusin, submit, keydown...). They call `stopImmediatePropagation` and `preventDefault` before the page's own handlers run.
+    - A shield div over the iframe would also block hover, wheel scroll and `elementFromPoint`.
+    - `preventDefault` on `mousedown` is what stops an input from getting focus.
+    - Gate listeners are registered once at the top. Mode lives in one variable. Interact mode just returns early.
+    - Bug I hit: I first put them inside the port message handler, so every message added more listeners and reset the mode.
+
+- Selection uses `pointerup`, not `click`.
+    - Disabled buttons never fire `click`, so page 2's disabled button could not be selected.
+
+- Hover and select messages go over the port.
+    - Agent sends `HOVER {box}` only when the element under the pointer changes, and `SELECT {box, shift}` on pointerup.
+    - Every element gets an id from a `WeakMap`. Not every element has `data-key`, and the README says any element can be selected.
+    - Boxes are plain `{id, label, x, y, w, h}` objects. Not `DOMRect`.
+    - Host keeps hover and selection per iframe. Shift + click toggles in the same preview. A plain click, or shift in a different preview, replaces the selection everywhere.
+    - Host sends the current mode (`SET_MODE`) after every handshake, so a preview that reconnects does not fall back to select mode.
+
+- Overlay is a separate layer outside the scaled board.
+    - Outline borders are fixed 1px (hover) and 2px (selected), so they stay thin at 400% zoom.
+    - Page to screen coordinates: `iframe.getBoundingClientRect()` already includes pan and zoom. Scale is `rect.width / offsetWidth`. Box position is `rect.left + box.x * scale`.
+    - Each preview gets its own clipping group, so outlines are cut at the preview's edge.
+    - Used `clientLeft`/`clientWidth` for the iframe, so its 1px border does not shift outlines.
+    - Conversion runs in a layout effect, so it re-runs when the camera moves.
+
+- Outlines stay glued when the page scrolls.
+    - Scroll events do not bubble. A normal listener on `window` never hears page 3's `.scroll-area`. A capture listener does.
+    - Agent re-sends rects on scroll and resize, throttled to one per animation frame.
+    - Host tells the agent which ids are selected (`TRACK`), so the agent knows what to re-measure. Host merges new rects by id
+
+- Outlines are clipped against scroll containers.
+    - `getBoundingClientRect` ignores clipping, so a row scrolled out of the table kept a box floating over other content.
+    - `visibleRect` intersects the box with every ancestor whose overflow is not `visible`, using the padding box (no border or scrollbar), then with the iframe viewport.
+    - Fully hidden elements send a zero size box. They stay selected, the host just does not draw them.
+    - Limit: `position: absolute` elements whose containing block is outside the scroll container are still clipped by this code. `position: fixed` is skipped on purpose.

@@ -8,9 +8,9 @@ interface PendingRequest {
   reject: (error: Error) => void;
 }
 
-export function setMode(mode: 'select' | 'interact') {
+export function setMode(mode: "select" | "interact") {
   currentMode = mode;
-  iframeMap.forEach((port) => port.postMessage({ type: 'SET_MODE', mode }));
+  iframeMap.forEach((port) => port.postMessage({ type: "SET_MODE", mode }));
   notifyOverlay(); // so the host can hide outlines
 }
 export const getMode = () => currentMode;
@@ -167,7 +167,7 @@ function handleHandshake(event: MessageEvent<Message>) {
 
     // Test: send ping with ID
     channel.port1.postMessage({ id: `ping-${Date.now()}`, type: "PING" });
-    channel.port1.postMessage({ type: 'SET_MODE', mode: getMode() }); // tell the agent what mode we're in
+    channel.port1.postMessage({ type: "SET_MODE", mode: getMode() }); // tell the agent what mode we're in
 
     // Handshake succeeded: clear the timeout and any error (also covers a late connect)
     clearTimeout(iframeTimeouts.get(sourceIframe));
@@ -216,6 +216,21 @@ function handleAgentMessage(
         overlayData.set(other, { ...d, selected: [] });
     });
     overlayData.set(iframe, { ...getOverlay(iframe), selected });
+    overlayData.forEach((d, i) => {
+      iframeMap
+        .get(i)
+        ?.postMessage({ type: "TRACK", ids: d.selected.map((b) => b.id) });
+    });
+    notifyOverlay();
+  }
+
+  if (msg.type === "RECT_UPDATE") {
+    const fresh = new Map(msg.boxes.map((b) => [b.id, b]));
+    const cur = getOverlay(iframe);
+    overlayData.set(iframe, {
+      hover: cur.hover ? (fresh.get(cur.hover.id) ?? cur.hover) : null,
+      selected: cur.selected.map((b) => fresh.get(b.id) ?? b),
+    });
     notifyOverlay();
   }
 }

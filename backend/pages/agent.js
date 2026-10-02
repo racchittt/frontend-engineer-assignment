@@ -27,6 +27,59 @@ console.log("Agent loading...");
       true,
     ),
   );
+
+  function visibleRect(el) {
+    const r = el.getBoundingClientRect();
+    let left = r.left,
+      top = r.top,
+      right = r.right,
+      bottom = r.bottom;
+
+    if (getComputedStyle(el).position !== "fixed") {
+      for (let p = el.parentElement; p; p = p.parentElement) {
+        const cs = getComputedStyle(p);
+        if (cs.overflowX === "visible" && cs.overflowY === "visible") continue; // doesn't clip
+        const pr = p.getBoundingClientRect();
+        // padding box: inside the border, and without the scrollbar
+        left = Math.max(left, pr.left + p.clientLeft);
+        top = Math.max(top, pr.top + p.clientTop);
+        right = Math.min(right, pr.left + p.clientLeft + p.clientWidth);
+        bottom = Math.min(bottom, pr.top + p.clientTop + p.clientHeight);
+      }
+    }
+    // clip to the iframe's own viewport too
+    right = Math.min(right, window.innerWidth);
+    bottom = Math.min(bottom, window.innerHeight);
+
+    return right > left && bottom > top
+      ? { x: left, y: top, w: right - left, h: bottom - top }
+      : { x: left, y: top, w: 0, h: 0 }; // fully hidden
+  }
+
+  function sendRects() {
+    if (!agentPort || mode !== "select") return;
+    const want = new Set(tracked);
+    if (lastHover) want.add(ids.get(lastHover));
+    const boxes = [];
+    want.forEach((id) => {
+      const el = byId.get(id)?.deref();
+      if (el?.isConnected) boxes.push(boxOf(el)); // skip elements that are gone
+    });
+    agentPort.postMessage({ type: "RECT_UPDATE", boxes });
+  }
+  let tracked = new Set();
+  let queued = false;
+  const schedule = () => {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(() => {
+      queued = false;
+      sendRects();
+    });
+  };
+  window.addEventListener("scroll", schedule, true); // true = capture
+  window.addEventListener("resize", schedule);
+
   const HOST_ORIGIN = "http://localhost:5173";
   let agentPort = null;
   let helloInterval = null;
@@ -34,37 +87,64 @@ console.log("Agent loading...");
 
   // Hover + select. Plain capture listeners, not in BLOCK, so the gate doesn't kill them.
   const ids = new WeakMap(); // element -> id, assigned the first time we see it
+  const byId = new Map(); // id -> element, for reverse lookup
   let nextId = 0;
   let lastHover = null;
 
   const boxOf = (el) => {
-    if (!ids.has(el)) ids.set(el, `e${++nextId}`);
-    const r = el.getBoundingClientRect();
+    if (!ids.has(el)) {
+      const id = `e${++nextId}`;
+      ids.set(el, id);
+      byId.set(id, new WeakRef(el));
+    }
+    const v = visibleRect(el);
     return {
       id: ids.get(el),
-      label: el.dataset?.name || el.dataset?.key || el.tagName.toLowerCase() + (el.id ? `#${el.id}` : ""),
-      x: r.x, y: r.y, w: r.width, h: r.height,
+      label:
+        el.dataset?.name ||
+        el.dataset?.key ||
+        el.tagName.toLowerCase() + (el.id ? `#${el.id}` : ""),
+      x: v.x,
+      y: v.y,
+      w: v.w,
+      h: v.h,
     };
   };
 
-  window.addEventListener("pointermove", (e) => {
-    if (mode !== "select" || !agentPort || e.target === lastHover) return;
-    lastHover = e.target;
-    agentPort.postMessage({ type: "HOVER", box: boxOf(e.target) });
-  }, true);
+  window.addEventListener(
+    "pointermove",
+    (e) => {
+      if (mode !== "select" || !agentPort || e.target === lastHover) return;
+      lastHover = e.target;
+      agentPort.postMessage({ type: "HOVER", box: boxOf(e.target) });
+    },
+    true,
+  );
 
   // pointer left the page: clear hover
-  window.addEventListener("pointerout", (e) => {
-    if (e.relatedTarget || !agentPort) return;
-    lastHover = null;
-    agentPort.postMessage({ type: "HOVER", box: null });
-  }, true);
+  window.addEventListener(
+    "pointerout",
+    (e) => {
+      if (e.relatedTarget || !agentPort) return;
+      lastHover = null;
+      agentPort.postMessage({ type: "HOVER", box: null });
+    },
+    true,
+  );
 
   // pointerup, not click: disabled buttons never fire click
-  window.addEventListener("pointerup", (e) => {
-    if (mode !== "select" || !agentPort || e.button !== 0) return;
-    agentPort.postMessage({ type: "SELECT", box: boxOf(e.target), shift: e.shiftKey });
-  }, true);
+  window.addEventListener(
+    "pointerup",
+    (e) => {
+      if (mode !== "select" || !agentPort || e.button !== 0) return;
+      agentPort.postMessage({
+        type: "SELECT",
+        box: boxOf(e.target),
+        shift: e.shiftKey,
+      });
+    },
+    true,
+  );
 
   // Retry hello until AGENT_READY arrives
   function sayHello() {
@@ -129,6 +209,9 @@ console.log("Agent loading...");
       if (mode !== "select")
         agentPort.postMessage({ type: "HOVER", box: null }); // clear outline
     }
+
+    if (type === "TRACK") tracked = new Set(event.data.ids);
+
     if (type === "QUERY_ELEMENT") {
       const element = document.querySelector(
         `[data-key="${event.data.elementKey}"]`,

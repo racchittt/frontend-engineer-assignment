@@ -281,8 +281,8 @@ function App() {
                 className="absolute overflow-hidden"
                 style={{ left: g.left, top: g.top, width: g.w, height: g.h }}
               >
-                {g.hover && <Outline box={g.hover} s={g.s} kind="hover" />}
-                {g.selected.map((b) => (
+                {g.hover && g.hover.w > 0 && <Outline box={g.hover} s={g.s} kind="hover" />}
+                {g.selected.filter((b) => b.w > 0 && b.h > 0).map((b) => (
                   <Outline key={b.id} box={b} s={g.s} kind="selected" />
                 ))}
               </div>
