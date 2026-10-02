@@ -111,6 +111,96 @@ console.log("Agent loading...");
     };
   };
 
+  // ---- identity across re-renders ----
+  // Fingerprint of a tracked element, taken while it is still alive, so we can
+  // find it again after the page throws the node away and builds a new one.
+  const fps = new Map(); // id -> { anchor, path, sig }
+  const norm = (s) => s.replace(/\s+/g, " ").trim();
+  const sigOf = (el) =>
+    el.tagName +
+    "|" +
+    norm(el.textContent) +
+    "|" +
+    [...el.attributes]
+      .map((a) => `${a.name}=${a.value}`)
+      .sort()
+      .join(";");
+  // nearest data-key (self or ancestor) + position path under it.
+  // The path is only counted inside the keyed item, so inserting rows
+  // before it can't shift it.
+  function anchorOf(el) {
+    const path = [];
+    for (let n = el; n; n = n.parentElement) {
+      if (n.dataset?.key) return { anchor: n.dataset.key, path: path.join(">") };
+      const sibs = n.parentElement ? [...n.parentElement.children] : [];
+      path.unshift(`${n.tagName}:${sibs.indexOf(n)}`);
+    }
+    return { anchor: null, path: "" };
+  }
+  const fingerprint = (el) => ({ ...anchorOf(el), sig: sigOf(el) });
+  const flat = (nodes) =>
+    nodes.flatMap((n) => (n.nodeType === 1 ? [n, ...n.querySelectorAll("*")] : []));
+
+  function track(list) {
+    tracked = new Set(list);
+    list.forEach((id) => {
+      const el = byId.get(id)?.deref();
+      if (el) fps.set(id, fingerprint(el));
+    });
+  }
+
+  // Find tracked elements that were replaced. Prefer dropping to guessing.
+  function reidentify(records) {
+    const removed = flat(records.flatMap((r) => [...r.removedNodes]));
+    const added = flat(records.flatMap((r) => [...r.addedNodes])).filter(
+      (e) => e.isConnected,
+    );
+    const addedFps = new Map(added.map((e) => [e, fingerprint(e)]));
+    const taken = new Set();
+    const gone = [];
+
+    tracked.forEach((id) => {
+      if (byId.get(id)?.deref()?.isConnected) return; // still there
+      const fp = fps.get(id);
+      let hit = null;
+      if (fp?.anchor) {
+        // keyed item (or inside one): same key + same path, must be unique
+        const m = added.filter((e) => {
+          const f = addedFps.get(e);
+          return f.anchor === fp.anchor && f.path === fp.path;
+        });
+        if (m.length === 1) hit = m[0];
+      } else if (fp) {
+        // no key anywhere: only an exact, one-to-one signature match counts
+        const was = removed.filter((e) => sigOf(e) === fp.sig).length;
+        const m = added.filter((e) => addedFps.get(e).sig === fp.sig);
+        if (was === 1 && m.length === 1) hit = m[0];
+      }
+      if (hit && !taken.has(hit)) {
+        taken.add(hit);
+        ids.set(hit, id);
+        byId.set(id, new WeakRef(hit));
+        fps.set(id, addedFps.get(hit));
+      } else {
+        gone.push(id);
+      }
+    });
+
+    gone.forEach((id) => {
+      tracked.delete(id);
+      fps.delete(id);
+    });
+    return gone;
+  }
+
+  new MutationObserver((records) => {
+    if (!tracked.size) return;
+    const gone = reidentify(records);
+    if (gone.length && agentPort)
+      agentPort.postMessage({ type: "GONE", ids: gone });
+    schedule();
+  }).observe(document, { childList: true, subtree: true });
+
   window.addEventListener(
     "pointermove",
     (e) => {
@@ -155,7 +245,7 @@ console.log("Agent loading...");
   }
 
   // Say hello immediately
-  // sayHello();
+  sayHello();
 
   // Retry every 100ms until we get AGENT_READY
   helloInterval = setInterval(sayHello, 100);
@@ -210,7 +300,7 @@ console.log("Agent loading...");
         agentPort.postMessage({ type: "HOVER", box: null }); // clear outline
     }
 
-    if (type === "TRACK") tracked = new Set(event.data.ids);
+    if (type === "TRACK") track(event.data.ids);
 
     if (type === "QUERY_ELEMENT") {
       const element = document.querySelector(
@@ -227,4 +317,12 @@ console.log("Agent loading...");
   }
 
   window.agentPort = agentPort; // for debugging
+  // test hook (frontend/tests/identity.test.mjs drives the matcher through this)
+  window.__agent = {
+    attach: (p) => (agentPort = p),
+    boxOf,
+    track,
+    ids,
+    tracked: () => tracked,
+  };
 })();

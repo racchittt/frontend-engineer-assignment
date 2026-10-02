@@ -10,7 +10,7 @@ import {
   getMode,
   onOverlayChange,
   getOverlay,
-} from "./agent/agent";
+} from "./agent/host-bridge";
 import { zoomAt, panBy, type Camera } from "./camera";
 import type { Box } from "./protocol";
 

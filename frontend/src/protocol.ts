@@ -16,7 +16,8 @@ export type Message =
   | { type: "HOVER"; box: Box | null } // agent -> host
   | { type: "SELECT"; box: Box; shift: boolean } // agent -> host
   | { type: "TRACK"; ids: string[] } // host -> agent
-  | { type: "RECT_UPDATE"; boxes: Box[] }; // agent -> host
+  | { type: "RECT_UPDATE"; boxes: Box[] } // agent -> host
+  | { type: "GONE"; ids: string[] }; // agent -> host: couldn't re-identify, drop these
 
 export interface Request {
   id: string;

@@ -224,6 +224,15 @@ function handleAgentMessage(
     notifyOverlay();
   }
 
+  if (msg.type === "GONE") {
+    const cur = getOverlay(iframe);
+    overlayData.set(iframe, {
+      hover: cur.hover && msg.ids.includes(cur.hover.id) ? null : cur.hover,
+      selected: cur.selected.filter((b) => !msg.ids.includes(b.id)),
+    });
+    notifyOverlay();
+  }
+
   if (msg.type === "RECT_UPDATE") {
     const fresh = new Map(msg.boxes.map((b) => [b.id, b]));
     const cur = getOverlay(iframe);

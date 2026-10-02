@@ -167,3 +167,28 @@
     - `visibleRect` intersects the box with every ancestor whose overflow is not `visible`, using the padding box (no border or scrollbar), then with the iframe viewport.
     - Fully hidden elements send a zero size box. They stay selected, the host just does not draw them.
     - Limit: `position: absolute` elements whose containing block is outside the scroll container are still clipped by this code. `position: fixed` is skipped on purpose.
+
+## Commit 10: 
+
+- Selection now survives page 4 re-rendering.
+    - Page 4 rebuilds the whole list every 2 seconds. Every row is a new element, so the old selected element is gone.
+    - Before, the box just froze in place. Now the agent finds the new copy of the same row, or drops the selection.
+- How the agent finds the same row again (in `agent.js`).
+    - When a row is selected, the agent saves a small description of it: its key, its place inside that key, and its text.
+    - A `MutationObserver` tells the agent when elements are added or removed.
+    - If the row has a `data-key`, look for the new element with the same key. Exactly one match, keep it.
+    - If it has no key, look for exactly one new element with the same tag, text and attributes.
+    - If we are not sure, drop the selection. Never move it to a neighbour.
+- Why drop instead of guess.
+    - Moving the box to the wrong row looks like it worked, but the user now has the wrong thing selected.
+    - A dropped selection is easy to see and easy to fix by clicking again.
+    - Unkeyed rows on page 4 always get dropped, because their "2s ago" text changes every render.
+- Why not use the position, like `li:nth-child(2)`.
+    - Page 4 adds new rows at the top, so every row moves down one place.
+    - The position would then point at a different row. That is a silent jump.
+    - Position is only used inside a keyed row, where it cannot move.
+- New message `GONE`.
+    - The agent sends it when it drops a selection. The host removes that box.
+- Renamed `agent.ts` to `host-bridge.ts`.
+    - `agent.js` runs inside each preview page. `agent.ts` runs in the host app. Both had the same name, which was confusing.
+    - `agent.js` keeps its name because all 24 pages load it.
