@@ -79,7 +79,7 @@
     - Added `connected` flag that stops the retry interval when AGENT_READY is received.
 
 
-## Commit 7: a75a4db4910bab3dde9c89ea1b59a728bd0e362a
+## Commit 7: 555c386cb203e6d8d8945b8e21e01e89c5983861
 
 - "Couldn't connect" overlay never showed up, fixed.
     - The 10s timer was created in `initAgent`, but App renders "Loading..." first, so there were 0 iframes at that point.
@@ -107,3 +107,26 @@
 
 - Navigation doesn't wait for the 3s timeout. When the new document says hello with a different docId, teardown() rejects that iframe's pending requests immediately with "Navigation: page changed", then closes the old port.
 - docId is how the host tells "same document retrying hello" (ignore) from "new document" (tear down).
+
+## Commit 8: a5aeba1a1aec49bc966b4cd4b6d589b6f0da725f
+
+- Added a pannable and zoomable board for the 24 previews (M3).
+    - One design board `<div>` with `transform: translate(x,y) scale(z)` and `transform-origin: 0 0`. Previews sit in a 4 column grid inside it.
+    - Camera is just `{ x, y, z }`, kept in React state.
+
+- Zoom around the pointer, so the point under the cursor stays fixed.
+    - Formula: `newPan = p − (p − pan) × (z′ / z)`. Lives in `camera.ts` as pure functions (`zoomAt`, `panBy`, `clampZoom`)
+    - `p` is the cursor relative to the board, not the window. The header and padding would shift it otherwise.
+    - Zoom is multiplicative (`Math.exp`), so zooming in then out lands back where it started.
+    - Clamped to 25%–400%. (0.25, 4) `k` is computed after clamping, so the pan doesn't drift at the limits.
+
+- Ctrl+wheel zoom needs a non-passive listener.
+    - Wheel listeners are passive by default, so `preventDefault()` gets ignored and the browser zooms the whole page.
+    - React's `onWheel` is passive too, so it's added with `addEventListener('wheel', ..., { passive: false })`.
+    - Effect depends on `loading`, because the board div doesn't exist while "Loading..." is shown.
+
+- Drag to pan, and the iframe trap.
+    - An iframe swallows pointer events. Dragging over one sends `pointermove` and `pointerup` into the iframe, so the drag gets stuck.
+    - While panning, iframes get `pointer-events: none`. It's turned off again only in `endDrag` (pointer up or cancel).
+    - Also used `setPointerCapture` on the board as a backup.
+    - Retry button stops `pointerdown` from bubbling, so clicking it doesn't start a pan.
