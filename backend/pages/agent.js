@@ -1,22 +1,75 @@
 console.log("Agent loading...");
 
-(function() {
+(function () {
   // Generate unique docId for this page load
   // Navigation creates a new document with a new docId
   const docId = `${window.location.href}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-
-  const HOST_ORIGIN = 'http://localhost:5173';
+  // User interaction blocking when in 'select' mode
+  let mode = "select";
+  const BLOCK = [
+    "pointerdown",
+    "mousedown",
+    "mouseup",
+    "click",
+    "dblclick",
+    "focusin",
+    "submit",
+    "keydown",
+  ];
+  BLOCK.forEach((t) =>
+    window.addEventListener(
+      t,
+      (e) => {
+        if (mode !== "select") return;
+        e.stopImmediatePropagation();
+        e.preventDefault();
+      },
+      true,
+    ),
+  );
+  const HOST_ORIGIN = "http://localhost:5173";
   let agentPort = null;
   let helloInterval = null;
   let connected = false;
 
+  // Hover + select. Plain capture listeners, not in BLOCK, so the gate doesn't kill them.
+  const ids = new WeakMap(); // element -> id, assigned the first time we see it
+  let nextId = 0;
+  let lastHover = null;
+
+  const boxOf = (el) => {
+    if (!ids.has(el)) ids.set(el, `e${++nextId}`);
+    const r = el.getBoundingClientRect();
+    return {
+      id: ids.get(el),
+      label: el.dataset?.name || el.dataset?.key || el.tagName.toLowerCase() + (el.id ? `#${el.id}` : ""),
+      x: r.x, y: r.y, w: r.width, h: r.height,
+    };
+  };
+
+  window.addEventListener("pointermove", (e) => {
+    if (mode !== "select" || !agentPort || e.target === lastHover) return;
+    lastHover = e.target;
+    agentPort.postMessage({ type: "HOVER", box: boxOf(e.target) });
+  }, true);
+
+  // pointer left the page: clear hover
+  window.addEventListener("pointerout", (e) => {
+    if (e.relatedTarget || !agentPort) return;
+    lastHover = null;
+    agentPort.postMessage({ type: "HOVER", box: null });
+  }, true);
+
+  // pointerup, not click: disabled buttons never fire click
+  window.addEventListener("pointerup", (e) => {
+    if (mode !== "select" || !agentPort || e.button !== 0) return;
+    agentPort.postMessage({ type: "SELECT", box: boxOf(e.target), shift: e.shiftKey });
+  }, true);
+
   // Retry hello until AGENT_READY arrives
   function sayHello() {
     if (!connected && window.parent && window.parent !== window) {
-      window.parent.postMessage(
-        { type: 'AGENT_HELLO', docId },
-        HOST_ORIGIN
-      );
+      window.parent.postMessage({ type: "AGENT_HELLO", docId }, HOST_ORIGIN);
       console.log(`[${docId}] Sent AGENT_HELLO`);
     }
   }
@@ -28,16 +81,26 @@ console.log("Agent loading...");
   helloInterval = setInterval(sayHello, 100);
 
   // Listen for AGENT_READY from host
-  window.addEventListener('message', (event) => {
-    console.log(`[${docId}] Received message:`, event.data.type, 'from origin:', event.origin);
+  window.addEventListener("message", (event) => {
+    console.log(
+      `[${docId}] Received message:`,
+      event.data.type,
+      "from origin:",
+      event.origin,
+    );
 
     if (event.origin !== HOST_ORIGIN) {
-      console.warn(`[${docId}] Rejected: untrusted origin ${event.origin}, expected ${HOST_ORIGIN}`);
+      console.warn(
+        `[${docId}] Rejected: untrusted origin ${event.origin}, expected ${HOST_ORIGIN}`,
+      );
       return;
     }
 
-    if (event.data.type === 'AGENT_READY') {
-      console.log(`[${docId}] AGENT_READY received, ports:`, event.ports.length);
+    if (event.data.type === "AGENT_READY") {
+      console.log(
+        `[${docId}] AGENT_READY received, ports:`,
+        event.ports.length,
+      );
       if (event.ports[0]) {
         connected = true;
         clearInterval(helloInterval);
@@ -50,25 +113,35 @@ console.log("Agent loading...");
     }
   });
 
-  // ping-pong 
+  // ping-pong
   function handlePortMessage(event) {
     const { id, type } = event.data;
     console.log(`[${docId}] Received:`, type);
 
-    if (type === 'PING') {
-      agentPort.postMessage({ id, type: 'PONG' });
+    if (type === "PING") {
+      agentPort.postMessage({ id, type: "PONG" });
       console.log(`[${docId}] Sent PONG`);
     }
 
-    if (type === 'QUERY_ELEMENT') {
-    const element = document.querySelector(`[data-key="${event.data.elementKey}"]`);
-    agentPort.postMessage({
-      id, // Echo the ID back
-      type: 'ELEMENT_DATA',
-      data: { /* ... */ }
-    });
-  }
+    if (type === "SET_MODE") {
+      mode = event.data.mode;
+      lastHover = null;
+      if (mode !== "select")
+        agentPort.postMessage({ type: "HOVER", box: null }); // clear outline
+    }
+    if (type === "QUERY_ELEMENT") {
+      const element = document.querySelector(
+        `[data-key="${event.data.elementKey}"]`,
+      );
+      agentPort.postMessage({
+        id, // Echo the ID back
+        type: "ELEMENT_DATA",
+        data: {
+          /* ... */
+        },
+      });
+    }
   }
 
   window.agentPort = agentPort; // for debugging
-})(); 
+})();
