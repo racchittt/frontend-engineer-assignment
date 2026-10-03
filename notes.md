@@ -192,3 +192,48 @@
 - Renamed `agent.ts` to `host-bridge.ts`.
     - `agent.js` runs inside each preview page. `agent.ts` runs in the host app. Both had the same name, which was confusing.
     - `agent.js` keeps its name because all 24 pages load it.
+
+
+## Commit 11: 
+
+- Keyboard control: V, I, Esc, Enter, Shift+Enter, Tab.
+    - V selects Select mode, I selects Interact mode.
+    - Esc clears the selection.
+    - Enter goes to the first child, Shift+Enter to the parent, Tab to the next sibling, Shift+Tab to the previous one.
+    - Enter and Tab only work in Select mode. In Interact mode they act like normal keys.
+- Keys typed inside a preview.
+    - The preview is a different page, so the host never sees those keys.
+    - The agent catches the key and sends it to the host as a `KEY` message.
+    - The host has one function, `handleKey`, used for its own keys and for keys sent by the agent.
+    - One key press only happens in one place, so nothing is handled twice.
+    - This listener must be added before the block listener in `agent.js`, or the block listener stops it first.
+- Typing in a text box.
+    - The agent checks what is focused. If it is an input, textarea, select or editable text, it does not send the key.
+    - So typing "i" in an input just types the letter.
+    - Esc is the only key sent from a text box.
+- Enter and Tab need the page, so they use a request.
+    - The host calls `queryAgent` with `NAVIGATE` and a direction.
+    - The agent finds the element, takes the child, parent or sibling, and sends back its box with the same id.
+    - If there is no such element, nothing changes. If the request times out, the selection stays.
+    - It only works when exactly one element is selected.
+- Fixes.
+    - Keys with Ctrl, Cmd or Alt are ignored on both sides, so Ctrl+V or Ctrl+Shift+I do not change the mode.
+    - Enter and Tab are ignored when a host button or link is focused, so the toolbar and Retry still work with the keyboard.
+    - A Tab reply is dropped if the selection changed while waiting. So Esc right after Tab stays cleared.
+    - Pressing Tab twice very fast can move only one step. Left as is.
+- Explain it back. 
+    - A key typed inside a preview goes to the preview page only. The host never gets it, so the agent forwards it as `KEY`.
+    - If both handled `v`, the mode would be set twice and a selection could be cleared or moved twice.
+    - It cannot happen here: one key press goes to one page, and only the host acts on it.
+
+### Why a request is needed
+- The host only knows about boxes: numbers like {id: "e7", x, y, w, h}. It can't see the page's DOM, because the page is in a different origin. "The child of this element" is a DOM question, so only the agent inside the page can answer it. The host has to ask and wait for the reply. This is a request and a response over the MessagePort, not a one-way message like HOVER.
+
+Example: select a card, press Enter
+
+1. You press Enter (host in Select mode, or forwarded from the preview as KEY). handleKey("Enter", false) runs, then navigate.
+2. The host picks the starting point. It finds the preview that has exactly one selected box and reads that box's id, say e7. Enter becomes dir = "child". Shift+Enter becomes "parent", Tab "next", Shift+Tab "prev".
+3. The host sends the request with queryAgent(iframe, "NAVIGATE", { from: "e7", dir: "child" }). queryAgent adds a random request id, stores a pending promise, and starts a 3 second timer.
+4. The agent receives it. It looks up e7 in byId to get the real element. Then it picks the target: firstElementChild for child, parentElement for parent, nextElementSibling or previousElementSibling for the others.
+5. The agent replies with { id, type: "NAVIGATED", box }. boxOf(target) gives the new box and assigns a fresh id like e12 if the element has never been seen. The id in the reply is the same request id the host sent.
+6. The host matches the reply. handleAgentMessage sees an id, finds the pending request, and resolves the promise. The .then sets the selection to the new box, sends TRACK [e12] so the agent follows it, and redraws.

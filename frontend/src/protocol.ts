@@ -17,10 +17,10 @@ export type Message =
   | { type: "SELECT"; box: Box; shift: boolean } // agent -> host
   | { type: "TRACK"; ids: string[] } // host -> agent
   | { type: "RECT_UPDATE"; boxes: Box[] } // agent -> host
-  | { type: "GONE"; ids: string[] }; // agent -> host: couldn't re-identify, drop these
-
+  | { type: "GONE"; ids: string[] }// agent -> host: couldn't re-identify, drop these
+  | { type: "KEY"; key: string; shift: boolean }; // agent -> host
 export interface Request {
-  id: string;
+id: string;
   type: string;
   [key: string]: unknown;
 }

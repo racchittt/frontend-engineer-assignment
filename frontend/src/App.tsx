@@ -10,6 +10,7 @@ import {
   getMode,
   onOverlayChange,
   getOverlay,
+  handleKey,
 } from "./agent/host-bridge";
 import { zoomAt, panBy, type Camera } from "./camera";
 import type { Box } from "./protocol";
@@ -162,8 +163,14 @@ function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "v" || e.key === "V") setMode("select");
-      if (e.key === "i" || e.key === "I") setMode("interact");
+      if (e.ctrlKey || e.metaKey || e.altKey) return; // browser shortcuts: Ctrl+V, Ctrl+Shift+I...
+      const t = e.target as HTMLElement;
+      if (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))
+        return;
+      // Enter and Tab belong to focused buttons and links, so keyboard users can still use the host UI
+      if ((e.key === "Enter" || e.key === "Tab") && t.closest("button, a, [role=button]"))
+        return;
+      if (handleKey(e.key, e.shiftKey)) e.preventDefault();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -281,10 +288,14 @@ function App() {
                 className="absolute overflow-hidden"
                 style={{ left: g.left, top: g.top, width: g.w, height: g.h }}
               >
-                {g.hover && g.hover.w > 0 && <Outline box={g.hover} s={g.s} kind="hover" />}
-                {g.selected.filter((b) => b.w > 0 && b.h > 0).map((b) => (
-                  <Outline key={b.id} box={b} s={g.s} kind="selected" />
-                ))}
+                {g.hover && g.hover.w > 0 && (
+                  <Outline box={g.hover} s={g.s} kind="hover" />
+                )}
+                {g.selected
+                  .filter((b) => b.w > 0 && b.h > 0)
+                  .map((b) => (
+                    <Outline key={b.id} box={b} s={g.s} kind="selected" />
+                  ))}
               </div>
             ))}
         </div>

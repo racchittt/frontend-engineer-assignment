@@ -4,6 +4,21 @@ console.log("Agent loading...");
   // Generate unique docId for this page load
   // Navigation creates a new document with a new docId
   const docId = `${window.location.href}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+  const isTyping = (el) =>
+    el?.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el?.tagName);
+  const KEYS = ["v", "V", "i", "I", "Escape", "Enter", "Tab"];
+
+  window.addEventListener(
+    "keydown",
+    (e) => {
+      if (!agentPort || !KEYS.includes(e.key)) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return; // not ours: Ctrl+V, Ctrl+Shift+I...
+      if (e.key !== "Escape" && isTyping(document.activeElement)) return;
+      agentPort.postMessage({ type: "KEY", key: e.key, shift: e.shiftKey });
+    },
+    true,
+  );
   // User interaction blocking when in 'select' mode
   let mode = "select";
   const BLOCK = [
@@ -131,7 +146,8 @@ console.log("Agent loading...");
   function anchorOf(el) {
     const path = [];
     for (let n = el; n; n = n.parentElement) {
-      if (n.dataset?.key) return { anchor: n.dataset.key, path: path.join(">") };
+      if (n.dataset?.key)
+        return { anchor: n.dataset.key, path: path.join(">") };
       const sibs = n.parentElement ? [...n.parentElement.children] : [];
       path.unshift(`${n.tagName}:${sibs.indexOf(n)}`);
     }
@@ -139,7 +155,9 @@ console.log("Agent loading...");
   }
   const fingerprint = (el) => ({ ...anchorOf(el), sig: sigOf(el) });
   const flat = (nodes) =>
-    nodes.flatMap((n) => (n.nodeType === 1 ? [n, ...n.querySelectorAll("*")] : []));
+    nodes.flatMap((n) =>
+      n.nodeType === 1 ? [n, ...n.querySelectorAll("*")] : [],
+    );
 
   function track(list) {
     tracked = new Set(list);
@@ -302,16 +320,20 @@ console.log("Agent loading...");
 
     if (type === "TRACK") track(event.data.ids);
 
-    if (type === "QUERY_ELEMENT") {
-      const element = document.querySelector(
-        `[data-key="${event.data.elementKey}"]`,
-      );
+    if (type === "NAVIGATE") {
+      const el = byId.get(event.data.from)?.deref();
+      const to =
+        el &&
+        {
+          child: el.firstElementChild,
+          parent: el.parentElement,
+          next: el.nextElementSibling,
+          prev: el.previousElementSibling,
+        }[event.data.dir];
       agentPort.postMessage({
-        id, // Echo the ID back
-        type: "ELEMENT_DATA",
-        data: {
-          /* ... */
-        },
+        id, // echo, so the host's pending request resolves
+        type: "NAVIGATED",
+        box: to && to !== document.documentElement ? boxOf(to) : null,
       });
     }
   }

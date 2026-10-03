@@ -1,5 +1,4 @@
 import type { Message, Request, Response, Box } from "../protocol";
-
 interface PendingRequest {
   id: string;
   type: string;
@@ -224,6 +223,8 @@ function handleAgentMessage(
     notifyOverlay();
   }
 
+  if (msg.type === "KEY") handleKey(msg.key, msg.shift);
+
   if (msg.type === "GONE") {
     const cur = getOverlay(iframe);
     overlayData.set(iframe, {
@@ -276,4 +277,51 @@ export async function queryAgent(
     iframeRequests.set(id, { id, type, timeout, resolve, reject });
     port.postMessage(request);
   });
+}
+
+function navigate(key: string, shift: boolean): boolean {
+  const owner = [...overlayData].find(([, d]) => d.selected.length === 1);
+  if (!owner) return false; // nothing to move from, leave the key alone
+  const [iframe, d] = owner;
+  const dir = key === "Enter" ? (shift ? "parent" : "child") : (shift ? "prev" : "next");
+
+  const from = d.selected[0].id;
+  queryAgent(iframe, "NAVIGATE", { from, dir })
+    .then((res) => {
+      const box = res.box as Box | null;
+      if (!box) return; // dead end: stay put
+      // stale reply: Esc, a click or another Tab changed the selection while we waited
+      const now = getOverlay(iframe).selected;
+      if (now.length !== 1 || now[0].id !== from) return;
+      overlayData.set(iframe, { ...getOverlay(iframe), selected: [box] });
+      iframeMap.get(iframe)?.postMessage({ type: "TRACK", ids: [box.id] });
+      notifyOverlay();
+    })
+    .catch(() => {}); // timeout or preview gone: keep the selection
+  return true;
+}
+function clearSelection() {
+  overlayData.forEach((d, i) => {
+    overlayData.set(i, { ...d, selected: [] });
+    iframeMap.get(i)?.postMessage({ type: "TRACK", ids: [] });
+  });
+  notifyOverlay();
+}
+
+export function handleKey(key: string, shift: boolean): boolean {
+  if (key === "v" || key === "V") {
+    setMode("select");
+    return true;
+  }
+  if (key === "i" || key === "I") {
+    setMode("interact");
+    return true;
+  }
+  if (key === "Escape") {
+    clearSelection();
+    return true;
+  }
+  if (currentMode === "select" && (key === "Enter" || key === "Tab"))
+    return navigate(key, shift);
+  return false;
 }
