@@ -5,13 +5,15 @@ import {
   watchIframe,
   onErrorChange,
   retryIframe,
+} from "./agent/connection";
+import {
   type OverlayData,
   setMode,
   getMode,
   onOverlayChange,
   getOverlay,
-  handleKey,
-} from "./agent/host-bridge";
+} from "./agent/overlay";
+import { handleKey } from "./agent/keys";
 import { zoomAt, panBy, type Camera } from "./camera";
 import type { Box } from "./protocol";
 import LayersPanel from "./ui/LayersPanel";

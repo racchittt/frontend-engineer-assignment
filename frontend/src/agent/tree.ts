@@ -1,4 +1,4 @@
-import { queryAgent, onIframeReset } from "./host-bridge";
+import { queryAgent, onIframeReset } from "./connection";
 
 export interface Row {
   id: string;

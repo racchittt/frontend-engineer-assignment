@@ -23,7 +23,7 @@ import {
   onOverlayChange,
   hoverNode,
   selectNode,
-} from "../agent/host-bridge";
+} from "../agent/overlay";
 
 const ROW_H = 24;
 

@@ -1,10 +1,10 @@
 import { useEffect, useReducer, useState } from "react";
+import { queryAgent } from "../agent/connection";
 import {
   getSelection,
   onOverlayChange,
-  queryAgent,
   wasSelectionLost,
-} from "../agent/host-bridge";
+} from "../agent/overlay";
 
 interface Live {
   name: string;
