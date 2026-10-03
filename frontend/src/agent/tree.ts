@@ -97,3 +97,19 @@ export function collapse(iframe: HTMLIFrameElement, id: string) {
     notify();
   }
 }
+
+export async function reveal(iframe: HTMLIFrameElement, id: string) {
+  const res = await queryAgent(iframe, "REVEAL", { from: id }); // not `id`: that would overwrite the request id
+  const levels = res.levels as { from: string | null; children: Row[] }[] | null;
+  if (!levels) return false;
+  for (const l of levels) {            // top-down, so each parent exists before its children
+    const n = getNode(iframe, l.from ?? ROOT);
+    if (!n) continue;
+    n.children = l.children.map((k) => (upsert(iframe, k), k.id)); // replace, never append
+    n.expanded = true;
+    n.status = "idle";
+  }
+  notify();
+  return true;
+}
+

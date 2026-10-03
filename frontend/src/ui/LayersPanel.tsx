@@ -1,5 +1,13 @@
-import { useEffect, useReducer, useState, type RefObject } from "react";
-import { onTreeChange, flatten, expand, collapse, ROOT } from "../agent/tree";
+import { useEffect, useReducer, useRef, useState, type RefObject } from "react";
+import {
+  onTreeChange,
+  flatten,
+  expand,
+  collapse,
+  ROOT,
+  reveal,
+} from "../agent/tree";
+import { getOverlay, onOverlayChange } from "../agent/host-bridge";
 
 interface Screen {
   id: string;
@@ -16,6 +24,7 @@ const LayersPanel = ({
 }) => {
   const [, bump] = useReducer((x) => x + 1, 0);
   const [top, setTop] = useState(0);
+  const boxRef = useRef<HTMLDivElement>(null);
   // snapshot of the iframes, taken once the refs are filled (mount effect)
   const [iframes, snapshot] = useReducer(
     () => new Map(iframeRefs.current),
@@ -25,6 +34,38 @@ const LayersPanel = ({
     snapshot();
     return onTreeChange(bump);
   }, []);
+  const lastRevealed = useRef("");
+  const pendingScroll = useRef<string | null>(null);
+  useEffect(
+    () =>
+      onOverlayChange(() => {
+        // only one preview holds the selection, so look at all of them first
+        // (resetting inside the loop would be undone by the other previews)
+        let found: [string, HTMLIFrameElement, string] | null = null;
+        iframeRefs.current.forEach((iframe, screenId) => {
+          const sel = getOverlay(iframe).selected.at(-1);
+          if (sel) found = [screenId, iframe, sel.id];
+        });
+        if (!found) {
+          lastRevealed.current = ""; // so Esc, then reselecting the same element reveals again
+          return;
+        }
+        const [screenId, iframe, id] = found as [string, HTMLIFrameElement, string];
+        const key = `${screenId}:${id}`;
+        if (key === lastRevealed.current) return; // RECT_UPDATE fires a lot
+        lastRevealed.current = key;
+        reveal(iframe, id)
+          .then((ok) => {
+            // a newer selection may have replaced this one while we waited
+            if (ok && lastRevealed.current === key) pendingScroll.current = key;
+            bump();
+          })
+          .catch(() => {
+            lastRevealed.current = ""; // timeout: allow a retry
+          });
+      }),
+    [iframeRefs],
+  );
 
   const rows = screens.flatMap((screen) => {
     const iframe = iframes.get(screen.id);
@@ -37,8 +78,20 @@ const LayersPanel = ({
     rows.length,
     Math.ceil((top + window.innerHeight) / ROW_H) + 5,
   );
+
+  useEffect(() => {
+    if (!pendingScroll.current) return;
+    const i = rows.findIndex(
+      (r) => `${r.screen.id}:${r.id}` === pendingScroll.current,
+    );
+    if (i < 0) return;
+    boxRef.current!.scrollTop = Math.max(0, i * ROW_H - 100); // leave some rows above it
+    pendingScroll.current = null;
+  });
+
   return (
     <div
+      ref={boxRef}
       className="w-72 h-screen overflow-auto"
       onScroll={(e) => setTop(e.currentTarget.scrollTop)}
     >

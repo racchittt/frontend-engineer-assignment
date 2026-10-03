@@ -169,7 +169,10 @@ function App() {
       if (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))
         return;
       // Enter and Tab belong to focused buttons and links, so keyboard users can still use the host UI
-      if ((e.key === "Enter" || e.key === "Tab") && t.closest("button, a, [role=button]"))
+      if (
+        (e.key === "Enter" || e.key === "Tab") &&
+        t.closest("button, a, [role=button]")
+      )
         return;
       if (handleKey(e.key, e.shiftKey)) e.preventDefault();
     };
@@ -213,96 +216,96 @@ function App() {
         </div>
       </div>
       <div className="flex">
-      <div className="relative flex-1 min-w-0">
-        {/* Design Board container */}
-        <div
-          ref={boardRef}
-          className="overflow-hidden h-screen touch-none"
-          style={{ cursor: isPanning ? "grabbing" : "grab" }}
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={endDrag}
-          onPointerCancel={endDrag}
-        >
+        <LayersPanel screens={screens} iframeRefs={iframeRefs} />
+        <div className="relative flex-1 min-w-0">
+          {/* Design Board container */}
           <div
-            style={{
-              transform: `translate(${x}px,${y}px) scale(${z})`,
-              transformOrigin: "0 0",
-            }}
-            className="w-max"
+            ref={boardRef}
+            className="overflow-hidden h-screen touch-none"
+            style={{ cursor: isPanning ? "grabbing" : "grab" }}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={endDrag}
+            onPointerCancel={endDrag}
           >
-            <div className="grid grid-cols-4 gap-6">
-              {screens.map((screen) => {
-                const error = previewErrors.get(screen.id);
+            <div
+              style={{
+                transform: `translate(${x}px,${y}px) scale(${z})`,
+                transformOrigin: "0 0",
+              }}
+              className="w-max"
+            >
+              <div className="grid grid-cols-4 gap-6">
+                {screens.map((screen) => {
+                  const error = previewErrors.get(screen.id);
 
-                return (
-                  <div key={screen.id} className="flex flex-col">
-                    <h3 className="text-lg font-semibold mb-2">
-                      {screen.name}
-                    </h3>
-                    <div className="relative">
-                      <iframe
-                        ref={(el) => {
-                          if (el) {
-                            iframeRefs.current.set(screen.id, el);
-                            watchIframe(el);
-                          }
-                        }}
-                        src={screen.url}
-                        width="1280"
-                        height="800"
-                        className={`border border-gray-300 rounded ${isPanning ? "pointer-events-none" : ""}`}
-                      />
-                      {error && (
-                        <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center rounded">
-                          <div className="bg-white p-6 rounded-lg text-center">
-                            <p className="text-red-600 font-semibold mb-4">
-                              {error}
-                            </p>
-                            <button
-                              onClick={() => {
-                                const el = iframeRefs.current.get(screen.id);
-                                if (el) retryIframe(el);
-                              }}
-                              onPointerDown={(e) => e.stopPropagation()}
-                              className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-                            >
-                              Retry
-                            </button>
+                  return (
+                    <div key={screen.id} className="flex flex-col">
+                      <h3 className="text-lg font-semibold mb-2">
+                        {screen.name}
+                      </h3>
+                      <div className="relative">
+                        <iframe
+                          ref={(el) => {
+                            if (el) {
+                              iframeRefs.current.set(screen.id, el);
+                              watchIframe(el);
+                            }
+                          }}
+                          src={screen.url}
+                          width="1280"
+                          height="800"
+                          className={`border border-gray-300 rounded ${isPanning ? "pointer-events-none" : ""}`}
+                        />
+                        {error && (
+                          <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center rounded">
+                            <div className="bg-white p-6 rounded-lg text-center">
+                              <p className="text-red-600 font-semibold mb-4">
+                                {error}
+                              </p>
+                              <button
+                                onClick={() => {
+                                  const el = iframeRefs.current.get(screen.id);
+                                  if (el) retryIframe(el);
+                                }}
+                                onPointerDown={(e) => e.stopPropagation()}
+                                className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+                              >
+                                Retry
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
           </div>
+          <div
+            ref={overlayRef}
+            className="absolute inset-0 pointer-events-none overflow-hidden"
+          >
+            {mode === "select" &&
+              groups.map((g, i) => (
+                <div
+                  key={i}
+                  className="absolute overflow-hidden"
+                  style={{ left: g.left, top: g.top, width: g.w, height: g.h }}
+                >
+                  {g.hover && g.hover.w > 0 && (
+                    <Outline box={g.hover} s={g.s} kind="hover" />
+                  )}
+                  {g.selected
+                    .filter((b) => b.w > 0 && b.h > 0)
+                    .map((b) => (
+                      <Outline key={b.id} box={b} s={g.s} kind="selected" />
+                    ))}
+                </div>
+              ))}
+          </div>
         </div>
-        <div
-          ref={overlayRef}
-          className="absolute inset-0 pointer-events-none overflow-hidden"
-        >
-          {mode === "select" &&
-            groups.map((g, i) => (
-              <div
-                key={i}
-                className="absolute overflow-hidden"
-                style={{ left: g.left, top: g.top, width: g.w, height: g.h }}
-              >
-                {g.hover && g.hover.w > 0 && (
-                  <Outline box={g.hover} s={g.s} kind="hover" />
-                )}
-                {g.selected
-                  .filter((b) => b.w > 0 && b.h > 0)
-                  .map((b) => (
-                    <Outline key={b.id} box={b} s={g.s} kind="selected" />
-                  ))}
-              </div>
-            ))}
-        </div>
-      </div>
-      <LayersPanel screens={screens} iframeRefs={iframeRefs} />
       </div>
     </div>
   );

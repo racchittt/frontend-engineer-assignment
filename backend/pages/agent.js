@@ -120,6 +120,12 @@ console.log("Agent loading...");
     el.dataset?.key ||
     el.tagName.toLowerCase() + (el.id ? `#${el.id}` : "");
 
+  const rowOf = (el) => ({
+    id: idOf(el),
+    label: labelOf(el),
+    hasChildren: el.childElementCount > 0,
+  });
+
   const boxOf = (el) => {
     const id = idOf(el);
     const v = visibleRect(el);
@@ -325,12 +331,23 @@ console.log("Agent loading...");
       agentPort.postMessage({
         id,
         type: "CHILDREN",
-        children: kids?.map((k) => ({
-          id: idOf(k),
-          label: labelOf(k),
-          hasChildren: k.childElementCount > 0,
-        })) ?? null,
+        children: kids?.map(rowOf) ?? null,
       });
+    }
+
+    if (type === "REVEAL") {
+      const el = byId.get(event.data.from)?.deref();
+      let levels = null;
+      if (el?.isConnected) {
+        // from <html> down to el's parent, each level with all its children
+        const chain = [];
+        for (let n = el.parentElement; n; n = n.parentElement) chain.unshift(n);
+        levels = [
+          { from: null, children: [document.documentElement] },
+          ...chain.map((n) => ({ from: idOf(n), children: [...n.children] })),
+        ].map((l) => ({ from: l.from, children: l.children.map(rowOf) }));
+      }
+      agentPort.postMessage({ id, type: "REVEALED", levels });
     }
 
     if (type === "PING") {
