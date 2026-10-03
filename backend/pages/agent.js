@@ -126,6 +126,29 @@ console.log("Agent loading...");
     hasChildren: el.childElementCount > 0,
   });
 
+  // what the inspector's Live section shows. All strings, so the host can compare
+  // several elements field by field ("Mixed" when they differ).
+  const liveOf = (el) => {
+    const r = el.getBoundingClientRect();
+    const cs = getComputedStyle(el);
+    return {
+      name: labelOf(el),
+      tag: el.tagName.toLowerCase(),
+      id: el.id,
+      classes: el.getAttribute("class") ?? "",
+      size: `${Math.round(r.width)} × ${Math.round(r.height)}`,
+      // position within the page: viewport position plus how far the page is scrolled
+      position: `${Math.round(r.left + window.scrollX)}, ${Math.round(r.top + window.scrollY)}`,
+      text: el.textContent.replace(/\s+/g, " ").trim().slice(0, 120),
+      color: cs.color,
+      background: cs.backgroundColor,
+      fontFamily: cs.fontFamily,
+      fontSize: cs.fontSize,
+      fontWeight: cs.fontWeight,
+      key: el.dataset?.key ?? null, // for GET /elements/:key, not shown as a field
+    };
+  };
+
   const boxOf = (el) => {
     const id = idOf(el);
     const v = visibleRect(el);
@@ -335,6 +358,32 @@ console.log("Agent loading...");
       });
     }
 
+    // Inspector: live values for the selected elements (null = that one is gone)
+    if (type === "INSPECT") {
+      const lives = (event.data.ids ?? []).map((i) => {
+        const el = byId.get(i)?.deref();
+        return el?.isConnected ? liveOf(el) : null;
+      });
+      agentPort.postMessage({ id, type: "INSPECTED", lives });
+    }
+
+    // Layers search. The DOM lives here, and most of it isn't loaded in the tree yet.
+    if (type === "SEARCH") {
+      const q = String(event.data.q ?? "").trim().toLowerCase();
+      const LIMIT = 50;
+      const hits = [];
+      let total = 0;
+      if (q) {
+        for (const el of document.documentElement.querySelectorAll("*")) {
+          const hay = `${labelOf(el)} ${el.getAttribute("class") ?? ""}`.toLowerCase();
+          if (!hay.includes(q)) continue;
+          if (hits.length < LIMIT) hits.push(rowOf(el));
+          total++;
+        }
+      }
+      agentPort.postMessage({ id, type: "SEARCHED", hits, total });
+    }
+
     if (type === "REVEAL") {
       const el = byId.get(event.data.from)?.deref();
       let levels = null;
@@ -364,6 +413,16 @@ console.log("Agent loading...");
 
     if (type === "TRACK") track(event.data.ids);
 
+    // a layers-panel row is hovered: outline that element, same path as a real hover
+    if (type === "HOVER_NODE" && mode === "select") {
+      const el = event.data.from && byId.get(event.data.from)?.deref();
+      lastHover = el?.isConnected ? el : null;
+      agentPort.postMessage({
+        type: "HOVER",
+        box: lastHover ? boxOf(lastHover) : null,
+      });
+    }
+
     if (type === "NAVIGATE") {
       const el = byId.get(event.data.from)?.deref();
       const to =
@@ -373,6 +432,7 @@ console.log("Agent loading...");
           parent: el.parentElement,
           next: el.nextElementSibling,
           prev: el.previousElementSibling,
+          self: el, // a layers row was clicked: just give me its box
         }[event.data.dir];
       agentPort.postMessage({
         id, // echo, so the host's pending request resolves

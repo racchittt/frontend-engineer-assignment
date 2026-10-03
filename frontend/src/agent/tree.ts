@@ -1,4 +1,4 @@
-import { queryAgent } from "./host-bridge";
+import { queryAgent, onIframeReset } from "./host-bridge";
 
 export interface Row {
   id: string;
@@ -41,6 +41,12 @@ const blank = (row: Row): Node => ({
 const nodes = new Map<HTMLIFrameElement, Map<string, Node>>();
 const listeners = new Set<() => void>();
 const notify = () => listeners.forEach((l) => l());
+
+// new document in this iframe (navigation or retry): the old ids mean nothing now
+onIframeReset((iframe) => {
+  nodes.delete(iframe);
+  notify();
+});
 export function onTreeChange(l: () => void) {
   listeners.add(l);
   return () => {
@@ -107,9 +113,37 @@ export async function reveal(iframe: HTMLIFrameElement, id: string) {
     if (!n) continue;
     n.children = l.children.map((k) => (upsert(iframe, k), k.id)); // replace, never append
     n.expanded = true;
-    n.status = "idle";
+    // A load may still be running for this node. Leave it "loading": its reply
+    // replaces the children and sets idle itself. Marking idle here would hide
+    // the spinner and let a click send a second request.
+    if (n.status !== "loading") n.status = "idle";
   }
   notify();
   return true;
 }
 
+
+export interface Hit {
+  screenId: string;
+  iframe: HTMLIFrameElement;
+  row: Row;
+}
+
+// Ask every preview; one slow or dead preview just contributes nothing.
+export async function search(
+  iframes: Map<string, HTMLIFrameElement>,
+  q: string,
+): Promise<{ hits: Hit[]; total: number }> {
+  const per = await Promise.all(
+    [...iframes].map(async ([screenId, iframe]) => {
+      try {
+        const res = await queryAgent(iframe, "SEARCH", { q });
+        const rows = res.hits as Row[];
+        return { total: res.total as number, hits: rows.map((row) => ({ screenId, iframe, row })) };
+      } catch {
+        return { total: 0, hits: [] as Hit[] };
+      }
+    }),
+  );
+  return { hits: per.flatMap((p) => p.hits), total: per.reduce((n, p) => n + p.total, 0) };
+}

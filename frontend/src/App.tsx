@@ -15,6 +15,7 @@ import {
 import { zoomAt, panBy, type Camera } from "./camera";
 import type { Box } from "./protocol";
 import LayersPanel from "./ui/LayersPanel";
+import Inspector from "./ui/Inspector";
 
 interface Screen {
   id: string;
@@ -171,7 +172,7 @@ function App() {
       // Enter and Tab belong to focused buttons and links, so keyboard users can still use the host UI
       if (
         (e.key === "Enter" || e.key === "Tab") &&
-        t.closest("button, a, [role=button]")
+        t.closest("button, a, [role=button], [role=tree]")
       )
         return;
       if (handleKey(e.key, e.shiftKey)) e.preventDefault();
@@ -306,6 +307,7 @@ function App() {
               ))}
           </div>
         </div>
+        <Inspector />
       </div>
     </div>
   );

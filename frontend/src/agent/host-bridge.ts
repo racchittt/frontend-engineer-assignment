@@ -22,6 +22,17 @@ const overlayData = new Map<HTMLIFrameElement, OverlayData>();
 const overlayListeners = new Set<() => void>();
 let currentMode: "select" | "interact" = "select";
 
+let selectionLost = false;
+export const wasSelectionLost = () => selectionLost;
+
+// The selected elements and the preview they live in (null = nothing selected).
+// `boxes` is a new array whenever the selection or its rects change, but not on hover.
+export function getSelection() {
+  for (const [iframe, d] of overlayData)
+    if (d.selected.length) return { iframe, boxes: d.selected };
+  return null;
+}
+
 export const getOverlay = (iframe: HTMLIFrameElement): OverlayData =>
   overlayData.get(iframe) ?? { hover: null, selected: [] };
 
@@ -97,8 +108,19 @@ export function watchIframe(iframe: HTMLIFrameElement) {
   armConnectTimeout(iframe);
 }
 
+// Others (the layers tree) subscribe here to drop what they cached for an iframe's old document.
+// A subscription instead of an import, because tree.ts already imports this file.
+const resetListeners = new Set<(iframe: HTMLIFrameElement) => void>();
+export function onIframeReset(listener: (iframe: HTMLIFrameElement) => void) {
+  resetListeners.add(listener);
+  return () => {
+    resetListeners.delete(listener);
+  };
+}
+
 // Drop the port and fail everything still waiting on it
 function teardown(iframe: HTMLIFrameElement, reason: string) {
+  resetListeners.forEach((l) => l(iframe));
   pendingRequestsPerIframe.get(iframe)?.forEach((req) => {
     clearTimeout(req.timeout);
     req.reject(new Error(reason));
@@ -175,6 +197,37 @@ function handleHandshake(event: MessageEvent<Message>) {
   }
 }
 
+// One place for "this box was picked": a click in a preview, or a row in the layers panel.
+function select(iframe: HTMLIFrameElement, box: Box, shift: boolean) {
+  selectionLost = false;
+  const mine = getOverlay(iframe).selected;
+  let selected: Box[];
+  if (!shift) selected = [box];
+  else if (mine.some((b) => b.id === box.id))
+    selected = mine.filter((b) => b.id !== box.id);
+  else selected = [...mine, box];
+
+  // README: plain click replaces the selection everywhere. Shift in a different preview does too.
+  overlayData.forEach((d, other) => {
+    if (other !== iframe && (!shift || selected.length))
+      overlayData.set(other, { ...d, selected: [] });
+  });
+  overlayData.set(iframe, { ...getOverlay(iframe), selected });
+  overlayData.forEach((d, i) => {
+    iframeMap
+      .get(i)
+      ?.postMessage({ type: "TRACK", ids: d.selected.map((b) => b.id) });
+  });
+  notifyOverlay();
+}
+
+// A layers row was clicked / Enter: ask the agent for the box, then select it like a click would.
+export async function selectNode(iframe: HTMLIFrameElement, id: string) {
+  const res = await queryAgent(iframe, "NAVIGATE", { from: id, dir: "self" });
+  const box = res.box as Box | null;
+  if (box) select(iframe, box, false);
+}
+
 function handleAgentMessage(
   iframe: HTMLIFrameElement,
   event: MessageEvent<Response>,
@@ -201,35 +254,18 @@ function handleAgentMessage(
     overlayData.set(iframe, { ...getOverlay(iframe), hover: msg.box });
     notifyOverlay();
   }
-  if (msg.type === "SELECT") {
-    const mine = getOverlay(iframe).selected;
-    let selected: Box[];
-    if (!msg.shift) selected = [msg.box];
-    else if (mine.some((b) => b.id === msg.box.id))
-      selected = mine.filter((b) => b.id !== msg.box.id);
-    else selected = [...mine, msg.box];
-
-    // README: plain click replaces the selection everywhere. Shift in a different preview does too.
-    overlayData.forEach((d, other) => {
-      if (other !== iframe && (!msg.shift || selected.length))
-        overlayData.set(other, { ...d, selected: [] });
-    });
-    overlayData.set(iframe, { ...getOverlay(iframe), selected });
-    overlayData.forEach((d, i) => {
-      iframeMap
-        .get(i)
-        ?.postMessage({ type: "TRACK", ids: d.selected.map((b) => b.id) });
-    });
-    notifyOverlay();
-  }
+  if (msg.type === "SELECT") select(iframe, msg.box, msg.shift);
 
   if (msg.type === "KEY") handleKey(msg.key, msg.shift);
 
   if (msg.type === "GONE") {
     const cur = getOverlay(iframe);
+    const selected = cur.selected.filter((b) => !msg.ids.includes(b.id));
+    // the inspector says "This element no longer exists" when removal emptied the selection
+    if (cur.selected.length && !selected.length) selectionLost = true;
     overlayData.set(iframe, {
       hover: cur.hover && msg.ids.includes(cur.hover.id) ? null : cur.hover,
-      selected: cur.selected.filter((b) => !msg.ids.includes(b.id)),
+      selected,
     });
     notifyOverlay();
   }
@@ -243,6 +279,11 @@ function handleAgentMessage(
     });
     notifyOverlay();
   }
+}
+
+// null = pointer left the row. The agent answers with the normal HOVER message.
+export function hoverNode(iframe: HTMLIFrameElement, from: string | null) {
+  iframeMap.get(iframe)?.postMessage({ type: "HOVER_NODE", from });
 }
 
 export function sendToAgent(iframe: HTMLIFrameElement, message: Request) {
@@ -301,6 +342,7 @@ function navigate(key: string, shift: boolean): boolean {
   return true;
 }
 function clearSelection() {
+  selectionLost = false; // Esc is the user's choice, not a vanished element
   overlayData.forEach((d, i) => {
     overlayData.set(i, { ...d, selected: [] });
     iframeMap.get(i)?.postMessage({ type: "TRACK", ids: [] });

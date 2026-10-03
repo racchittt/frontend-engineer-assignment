@@ -237,3 +237,53 @@ Example: select a card, press Enter
 4. The agent receives it. It looks up e7 in byId to get the real element. Then it picks the target: firstElementChild for child, parentElement for parent, nextElementSibling or previousElementSibling for the others.
 5. The agent replies with { id, type: "NAVIGATED", box }. boxOf(target) gives the new box and assigns a fresh id like e12 if the element has never been seen. The id in the reply is the same request id the host sent.
 6. The host matches the reply. handleAgentMessage sees an id, finds the pending request, and resolves the promise. The .then sets the selection to the new box, sends TRACK [e12] so the agent follows it, and redraws.
+
+## Commit 12: 
+
+- Layers panel: a tree of each preview's elements.
+    - The page's DOM is in the agent, so the host asks for it with requests. It does not get the whole tree at once.
+    - Children load only when a row is expanded (`GET_CHILDREN`). The agent sends back `{id, label, hasChildren}` for each child.
+    - No id in the request means the top: the reply is `<html>`. An id of an element that is gone gets `null`, so the row shows an error and not the wrong rows.
+- Where the tree state lives (`tree.ts`).
+    - One map per preview, by element id. Each node has `children` (ids), `expanded` and `status` (idle, loading, error).
+    - The tree is changed in place, so React is told with a subscription (`onTreeChange`) and the panel re-renders.
+    - A node's children are replaced when the reply arrives, never added to.
+    - Only one request per node can be running. Expanding a loading node does nothing new.
+    - So collapse and expand while loading cannot make duplicate rows.
+    - A timeout only marks that row as error, with a Retry. The rest of the tree keeps working.
+- Many rows: only the rows on screen are drawn.
+    - The visible rows are put in one flat list. Every row is 24px high, so the first and last row to draw come from the scroll position.
+    - A tall empty box gives the scrollbar its real size. Each row is placed at its index times 24.
+- Reveal: select something in a preview and its row opens in the tree.
+    - Page 5 is 30 levels deep. 30 requests could each time out, so the agent answers once (`REVEAL`) with every level from `<html>` down.
+    - The host fills the levels from the top, opens each one, then scrolls to the row (up and sideways, because 30 levels of indent is wider than the panel).
+    - The selected row is orange. The hovered row is blue.
+    - If a node is still loading when reveal arrives, reveal leaves it as loading. Its own reply sets it to idle. Setting idle early would hide the spinner and allow a second request.
+- Hover in both directions.
+    - Preview to row: the row whose id matches the hover box turns blue.
+    - Row to preview: the host sends `HOVER_NODE`. The agent answers with the normal `HOVER` message, so the outline, scrolling and re-render handling are the same as a real hover.
+    - A hovered element inside a closed row has no row to light up, and hover never opens rows.
+- Page navigation: the tree is cleared for that preview.
+    - `teardown` already runs on navigation and on Retry. It now calls `onIframeReset`, and `tree.ts` drops that preview's map.
+    - It is a subscription and not an import, because `tree.ts` already imports `host-bridge.ts`.
+- Keyboard in the panel.
+    - Up, Down, Home, End move the cursor. Right opens a row or goes to its first child. Left closes it or goes to its parent. Enter or Space selects the element.
+    - The tree is one focusable box with a cursor row. It does not give each row focus, because rows come and go while scrolling.
+    - The panel stops the keys it uses. App's Enter and Tab are ignored inside the tree, or Tab would trap the focus.
+    - Clicking a row selects the element too. The arrow only opens and closes.
+- Search.
+    - Most of the DOM is never loaded in the tree, so the agent searches its whole page (`SEARCH`). It matches the label and class names, and sends back the first 50 and the total.
+    - All previews are asked. A preview that fails only adds nothing.
+    - Typing waits 250ms. A counter drops an old reply that arrives after a newer one.
+    - Picking a result selects the element, clears the box, and reveal opens the tree there.
+- Inspector (right side).
+    - One element: the Live values come from the agent (`INSPECT`): name, tag, id, classes, size, position in the page, text (120 characters), colours and font.
+    - It asks again when the selection or its boxes change. A hover alone does not change them, so it causes no requests.
+    - Each reply is tied to the selection it was asked for, so a late reply is never shown.
+    - Details come from `GET /elements/:key` in a separate part. A newer selection cancels the old fetch.
+    - No `data-key` shows "No details". A 404 shows "No details for this element" and is not an error. Other failures show a Retry in that part only.
+    - Several elements: "N elements", and each field is the shared value or "Mixed". No Details.
+    - If the page removes the selected elements, it says "This element no longer exists". Esc does not.
+- Refactor.
+    - The select logic moved from the `SELECT` handler into one `select()` function. Clicks in a preview and clicks on a row both use it.
+    - `NAVIGATE` got a `self` direction, so a row click gets the element's box the same way Tab does.
