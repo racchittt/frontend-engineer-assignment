@@ -91,8 +91,7 @@ function select(iframe: HTMLIFrameElement, box: Box, shift: boolean) {
 // A layers row was clicked / Enter: ask the agent for the box, then select it like a click would.
 export async function selectNode(iframe: HTMLIFrameElement, id: string) {
   const res = await queryAgent(iframe, "NAVIGATE", { from: id, dir: "self" });
-  const box = res.box as Box | null;
-  if (box) select(iframe, box, false);
+  if (res.box) select(iframe, res.box, false);
 }
 
 // Keyboard move (Enter, Tab...): swap the one selected element `from` for `box`.

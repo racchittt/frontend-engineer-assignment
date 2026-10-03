@@ -1,10 +1,6 @@
+import type { Row } from "../protocol";
 import { queryAgent, onIframeReset } from "./connection";
 
-export interface Row {
-  id: string;
-  label: string;
-  hasChildren: boolean;
-}
 export interface TreeNode {
   row: Row;
   children: string[];
@@ -87,7 +83,7 @@ export function expand(iframe: HTMLIFrameElement, id: string) {
   notify();
   queryAgent(iframe, "GET_CHILDREN", { from: id === ROOT ? null : id })
     .then((res) => {
-      const kids = res.children as Row[] | null;
+      const kids = res.children;
       if (!kids) throw new Error("gone");
       n.children = kids.map((k) => (upsert(iframe, k), k.id)); // replace, never append
       n.status = "idle";
@@ -108,8 +104,7 @@ export function collapse(iframe: HTMLIFrameElement, id: string) {
 
 export async function reveal(iframe: HTMLIFrameElement, id: string) {
   const res = await queryAgent(iframe, "REVEAL", { from: id }); // not `id`: that would overwrite the request id
-  const levels = res.levels as
-    { from: string | null; children: Row[] }[] | null;
+  const levels = res.levels;
   if (!levels) return false;
   for (const l of levels) {
     // top-down, so each parent exists before its children
@@ -141,10 +136,9 @@ export async function search(
     [...iframes].map(async ([screenId, iframe]) => {
       try {
         const res = await queryAgent(iframe, "SEARCH", { q });
-        const rows = res.hits as Row[];
         return {
-          total: res.total as number,
-          hits: rows.map((row) => ({ screenId, iframe, row })),
+          total: res.total,
+          hits: res.hits.map((row) => ({ screenId, iframe, row })),
         };
       } catch {
         return { total: 0, hits: [] as Hit[] };

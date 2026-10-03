@@ -2,7 +2,7 @@
 // the MessageChannel per document, requests that wait for a reply, and connect errors.
 // It knows nothing about hover or selection. Others subscribe to what it hears:
 // onAgentMessage, onIframeConnect, onIframeReset.
-import type { Message, Response } from "../protocol";
+import type { Message, Requests, Response } from "../protocol";
 
 interface PendingRequest {
   id: string;
@@ -66,11 +66,12 @@ export function broadcast(message: Message) {
   iframeMap.forEach((port) => port.postMessage(message));
 }
 
-export async function queryAgent(
+// Ask a preview something and wait for the answer (rejects after 3s, on navigation or retry)
+export async function queryAgent<T extends keyof Requests>(
   iframe: HTMLIFrameElement,
-  type: string,
-  payload: Record<string, unknown> = {},
-): Promise<Response> {
+  type: T,
+  payload: Requests[T]["payload"],
+): Promise<Requests[T]["reply"]> {
   const port = iframeMap.get(iframe);
   if (!port) throw new Error("Agent not connected");
 
@@ -86,7 +87,13 @@ export async function queryAgent(
       reject(new Error(`Request timeout: ${type}`));
     }, REQUEST_TIMEOUT);
 
-    iframeRequests.set(id, { id, type, timeout, resolve, reject });
+    iframeRequests.set(id, {
+      id,
+      type,
+      timeout,
+      resolve: resolve as unknown as (data: Response) => void,
+      reject,
+    });
     port.postMessage(request);
   });
 }

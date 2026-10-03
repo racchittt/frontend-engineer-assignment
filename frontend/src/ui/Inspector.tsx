@@ -1,4 +1,5 @@
 import { useEffect, useReducer, useState } from "react";
+import type { Live } from "../protocol";
 import { queryAgent } from "../agent/connection";
 import {
   getSelection,
@@ -6,21 +7,6 @@ import {
   wasSelectionLost,
 } from "../agent/overlay";
 
-interface Live {
-  name: string;
-  tag: string;
-  id: string;
-  classes: string;
-  size: string;
-  position: string;
-  text: string;
-  color: string;
-  background: string;
-  fontFamily: string;
-  fontSize: string;
-  fontWeight: string;
-  key: string | null;
-}
 const FIELDS: [keyof Live, string][] = [
   ["name", "Name"],
   ["tag", "Tag"],
@@ -130,8 +116,7 @@ const Inspector = () => {
     let stale = false;
     queryAgent(iframe, "INSPECT", { ids: boxes.map((b) => b.id) })
       .then((res) => {
-        if (!stale)
-          setLive({ for: boxes, lives: res.lives as (Live | null)[] });
+        if (!stale) setLive({ for: boxes, lives: res.lives });
       })
       .catch(() => {
         if (!stale) setLive({ for: boxes, lives: null });
