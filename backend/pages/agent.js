@@ -344,13 +344,10 @@ console.log("Agent loading...");
 
     if (type === "GET_CHILDREN") {
       const from = event.data.from;
-      const el = from ? byId.get(from)?.deref() : document; // no id = the root
-      // id given but element gone: null, so the host shows an error instead of the root
-      const kids = el?.isConnected
-        ? el === document
-          ? [document.documentElement]
-          : [...el.children]
-        : null;
+      // no id = the top level, which is the children of <body> (html and body are not elements here)
+      const el = from ? byId.get(from)?.deref() : document.body;
+      // id given but element gone: null, so the host shows an error instead of the top level
+      const kids = el?.isConnected ? [...el.children] : null;
       agentPort.postMessage({
         id,
         type: "CHILDREN",
@@ -374,7 +371,7 @@ console.log("Agent loading...");
       const hits = [];
       let total = 0;
       if (q) {
-        for (const el of document.documentElement.querySelectorAll("*")) {
+        for (const el of document.body.querySelectorAll("*")) {
           const hay = `${labelOf(el)} ${el.getAttribute("class") ?? ""}`.toLowerCase();
           if (!hay.includes(q)) continue;
           if (hits.length < LIMIT) hits.push(rowOf(el));
@@ -387,12 +384,13 @@ console.log("Agent loading...");
     if (type === "REVEAL") {
       const el = byId.get(event.data.from)?.deref();
       let levels = null;
-      if (el?.isConnected) {
-        // from <html> down to el's parent, each level with all its children
+      if (el?.isConnected && document.body.contains(el) && el !== document.body) {
+        // from the top level (children of <body>) down to el's parent, each level with all its children
         const chain = [];
-        for (let n = el.parentElement; n; n = n.parentElement) chain.unshift(n);
+        for (let n = el.parentElement; n && n !== document.body; n = n.parentElement)
+          chain.unshift(n);
         levels = [
-          { from: null, children: [document.documentElement] },
+          { from: null, children: [...document.body.children] },
           ...chain.map((n) => ({ from: idOf(n), children: [...n.children] })),
         ].map((l) => ({ from: l.from, children: l.children.map(rowOf) }));
       }
@@ -437,7 +435,11 @@ console.log("Agent loading...");
       agentPort.postMessage({
         id, // echo, so the host's pending request resolves
         type: "NAVIGATED",
-        box: to && to !== document.documentElement ? boxOf(to) : null,
+        // html and body are not elements here: Shift+Enter at the top level does nothing
+        box:
+          to && to !== document.documentElement && to !== document.body
+            ? boxOf(to)
+            : null,
       });
     }
   }

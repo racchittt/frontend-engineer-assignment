@@ -22,6 +22,10 @@ const overlayData = new Map<HTMLIFrameElement, OverlayData>();
 const overlayListeners = new Set<() => void>();
 let currentMode: "select" | "interact" = "select";
 
+// Active preview: the one last clicked in Select mode. Kept after Esc or a navigation.
+let activeIframe: HTMLIFrameElement | null = null;
+export const getActiveIframe = () => activeIframe;
+
 let selectionLost = false;
 export const wasSelectionLost = () => selectionLost;
 
@@ -200,6 +204,7 @@ function handleHandshake(event: MessageEvent<Message>) {
 // One place for "this box was picked": a click in a preview, or a row in the layers panel.
 function select(iframe: HTMLIFrameElement, box: Box, shift: boolean) {
   selectionLost = false;
+  activeIframe = iframe; // the layers panel follows the last preview picked in Select mode
   const mine = getOverlay(iframe).selected;
   let selected: Box[];
   if (!shift) selected = [box];

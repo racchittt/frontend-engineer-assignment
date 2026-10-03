@@ -287,3 +287,23 @@ Example: select a card, press Enter
 - Refactor.
     - The select logic moved from the `SELECT` handler into one `select()` function. Clicks in a preview and clicks on a row both use it.
     - `NAVIGATE` got a `self` direction, so a row click gets the element's box the same way Tab does.
+
+
+## Commit 13: 
+
+- Active preview: the layers panel shows one preview, the one last picked in Select mode.
+    - It is set inside `select()`, so a click in a preview, a click on a row, a search pick and Enter on a row all count.
+    - It stays after Esc and after the page navigates. Before any click the panel says "Click something in a preview".
+    - It is kept in `host-bridge.ts` (`getActiveIframe`) next to the selection, and the panel re-renders on the same overlay event.
+- The top rows are the children of `<body>`.
+    - `html` and `body` are not elements in the tree. This changes the agent: `GET_CHILDREN` with no id, `REVEAL` and `SEARCH` all start at `<body>`.
+    - `NAVIGATE` also stops at the top, so Shift+Enter on a top row does nothing. This was a gap in the keyboard work.
+    - The hidden root is still in the map. `flatten` skips it and starts at its children.
+    - The top level loads when a preview becomes active. After a page navigates the map is cleared, so the root is fresh and loads again.
+    - If the top level fails, the panel shows "Couldn't load" with a Retry.
+- Switching between previews.
+    - Expanded rows are remembered for free, because the tree map is already one per preview. It is only cleared on navigation or reload.
+    - Scroll position is saved per preview and put back when the preview becomes active again.
+    - Checked with two previews: Sign up showed its own tree, and going back to Landing showed it still open.
+- Search now covers the active preview only, and results do not show a screen name. The panel does not need the screens list any more.
+- Error rows now say "Couldn't load" with a Retry.

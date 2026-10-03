@@ -26,7 +26,9 @@ export function flatten(iframe: HTMLIFrameElement): Flat[] {
     out.push({ id, depth, node: n });
     if (n.expanded) n.children.forEach((c) => walk(c, depth + 1));
   };
-  walk(ROOT, 0);
+  // ROOT is not a row: the top rows are the children of <body>
+  const root = getNode(iframe, ROOT);
+  if (root?.expanded) root.children.forEach((c) => walk(c, 0));
   return out;
 }
 

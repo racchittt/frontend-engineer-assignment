@@ -217,7 +217,7 @@ function App() {
         </div>
       </div>
       <div className="flex">
-        <LayersPanel screens={screens} iframeRefs={iframeRefs} />
+        <LayersPanel iframeRefs={iframeRefs} />
         <div className="relative flex-1 min-w-0">
           {/* Design Board container */}
           <div
