@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { initAgent } from "./agent/connection";
 import Board, { type Screen } from "./ui/board/Board";
-import Inspector from "./ui/Inspector";
-import LayersPanel from "./ui/LayersPanel";
+import Inspector from "./ui/inspector/Inspector";
+import LayersPanel from "./ui/layers/LayersPanel";
 import Toolbar from "./ui/Toolbar";
 import { useShortcuts } from "./ui/useShortcuts";
 
