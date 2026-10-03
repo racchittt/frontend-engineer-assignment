@@ -125,14 +125,15 @@ const LayersPanel = ({
   }, [active, searching]);
 
   useEffect(() => {
-    if (!pendingScroll.current) return;
+    // no scroll box while search results are showing: keep it pending until the tree is back
+    if (!pendingScroll.current || !boxRef.current) return;
     const i = rows.findIndex(
       (r) => `${activeId}:${r.id}` === pendingScroll.current,
     );
     if (i < 0) return;
-    boxRef.current!.scrollTop = Math.max(0, i * ROW_H - 100); // leave some rows above it
+    boxRef.current.scrollTop = Math.max(0, i * ROW_H - 100); // leave some rows above it
     // deep rows are indented past the panel's width (30 levels * 12px): bring the label into view too
-    boxRef.current!.scrollLeft = Math.max(0, rows[i].depth * 12 - 100);
+    boxRef.current.scrollLeft = Math.max(0, rows[i].depth * 12 - 100);
     pendingScroll.current = null;
   });
 
