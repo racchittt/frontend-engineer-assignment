@@ -106,19 +106,26 @@ console.log("Agent loading...");
   let nextId = 0;
   let lastHover = null;
 
-  const boxOf = (el) => {
+  const idOf = (el) => {
     if (!ids.has(el)) {
       const id = `e${++nextId}`;
       ids.set(el, id);
       byId.set(id, new WeakRef(el));
     }
+    return ids.get(el);
+  };
+
+  const labelOf = (el) =>
+    el.dataset?.name ||
+    el.dataset?.key ||
+    el.tagName.toLowerCase() + (el.id ? `#${el.id}` : "");
+
+  const boxOf = (el) => {
+    const id = idOf(el);
     const v = visibleRect(el);
     return {
-      id: ids.get(el),
-      label:
-        el.dataset?.name ||
-        el.dataset?.key ||
-        el.tagName.toLowerCase() + (el.id ? `#${el.id}` : ""),
+      id,
+      label: labelOf(el),
       x: v.x,
       y: v.y,
       w: v.w,
@@ -305,6 +312,26 @@ console.log("Agent loading...");
   function handlePortMessage(event) {
     const { id, type } = event.data;
     console.log(`[${docId}] Received:`, type);
+
+    if (type === "GET_CHILDREN") {
+      const from = event.data.from;
+      const el = from ? byId.get(from)?.deref() : document; // no id = the root
+      // id given but element gone: null, so the host shows an error instead of the root
+      const kids = el?.isConnected
+        ? el === document
+          ? [document.documentElement]
+          : [...el.children]
+        : null;
+      agentPort.postMessage({
+        id,
+        type: "CHILDREN",
+        children: kids?.map((k) => ({
+          id: idOf(k),
+          label: labelOf(k),
+          hasChildren: k.childElementCount > 0,
+        })) ?? null,
+      });
+    }
 
     if (type === "PING") {
       agentPort.postMessage({ id, type: "PONG" });

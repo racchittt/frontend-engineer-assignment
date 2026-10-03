@@ -14,6 +14,7 @@ import {
 } from "./agent/host-bridge";
 import { zoomAt, panBy, type Camera } from "./camera";
 import type { Box } from "./protocol";
+import LayersPanel from "./ui/LayersPanel";
 
 interface Screen {
   id: string;
@@ -211,7 +212,8 @@ function App() {
           </button>
         </div>
       </div>
-      <div className="relative">
+      <div className="flex">
+      <div className="relative flex-1 min-w-0">
         {/* Design Board container */}
         <div
           ref={boardRef}
@@ -299,6 +301,8 @@ function App() {
               </div>
             ))}
         </div>
+      </div>
+      <LayersPanel screens={screens} iframeRefs={iframeRefs} />
       </div>
     </div>
   );
