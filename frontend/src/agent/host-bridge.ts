@@ -1,4 +1,4 @@
-import type { Message, Request, Response, Box } from "../protocol";
+import type { Message, Response, Box } from "../protocol";
 interface PendingRequest {
   id: string;
   type: string;
@@ -291,15 +291,6 @@ export function hoverNode(iframe: HTMLIFrameElement, from: string | null) {
   iframeMap.get(iframe)?.postMessage({ type: "HOVER_NODE", from });
 }
 
-export function sendToAgent(iframe: HTMLIFrameElement, message: Request) {
-  const port = iframeMap.get(iframe);
-  if (port) {
-    port.postMessage(message);
-  } else {
-    console.error("Agent not connected for this iframe");
-  }
-}
-
 export async function queryAgent(
   iframe: HTMLIFrameElement,
   type: string,
@@ -329,7 +320,8 @@ function navigate(key: string, shift: boolean): boolean {
   const owner = [...overlayData].find(([, d]) => d.selected.length === 1);
   if (!owner) return false; // nothing to move from, leave the key alone
   const [iframe, d] = owner;
-  const dir = key === "Enter" ? (shift ? "parent" : "child") : (shift ? "prev" : "next");
+  const dir =
+    key === "Enter" ? (shift ? "parent" : "child") : shift ? "prev" : "next";
 
   const from = d.selected[0].id;
   queryAgent(iframe, "NAVIGATE", { from, dir })

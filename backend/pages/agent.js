@@ -366,13 +366,16 @@ console.log("Agent loading...");
 
     // Layers search. The DOM lives here, and most of it isn't loaded in the tree yet.
     if (type === "SEARCH") {
-      const q = String(event.data.q ?? "").trim().toLowerCase();
+      const q = String(event.data.q ?? "")
+        .trim()
+        .toLowerCase();
       const LIMIT = 50;
       const hits = [];
       let total = 0;
       if (q) {
         for (const el of document.body.querySelectorAll("*")) {
-          const hay = `${labelOf(el)} ${el.getAttribute("class") ?? ""}`.toLowerCase();
+          const hay =
+            `${labelOf(el)} ${el.getAttribute("class") ?? ""}`.toLowerCase();
           if (!hay.includes(q)) continue;
           if (hits.length < LIMIT) hits.push(rowOf(el));
           total++;
@@ -384,10 +387,18 @@ console.log("Agent loading...");
     if (type === "REVEAL") {
       const el = byId.get(event.data.from)?.deref();
       let levels = null;
-      if (el?.isConnected && document.body.contains(el) && el !== document.body) {
+      if (
+        el?.isConnected &&
+        document.body.contains(el) &&
+        el !== document.body
+      ) {
         // from the top level (children of <body>) down to el's parent, each level with all its children
         const chain = [];
-        for (let n = el.parentElement; n && n !== document.body; n = n.parentElement)
+        for (
+          let n = el.parentElement;
+          n && n !== document.body;
+          n = n.parentElement
+        )
           chain.unshift(n);
         levels = [
           { from: null, children: [...document.body.children] },
@@ -443,14 +454,4 @@ console.log("Agent loading...");
       });
     }
   }
-
-  window.agentPort = agentPort; // for debugging
-  // test hook (frontend/tests/identity.test.mjs drives the matcher through this)
-  window.__agent = {
-    attach: (p) => (agentPort = p),
-    boxOf,
-    track,
-    ids,
-    tracked: () => tracked,
-  };
 })();

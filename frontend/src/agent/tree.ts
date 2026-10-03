@@ -5,7 +5,7 @@ export interface Row {
   label: string;
   hasChildren: boolean;
 }
-export interface Node {
+export interface TreeNode {
   row: Row;
   children: string[];
   expanded: boolean;
@@ -15,7 +15,7 @@ export interface Node {
 export interface Flat {
   id: string;
   depth: number;
-  node: Node;
+  node: TreeNode;
 }
 
 export function flatten(iframe: HTMLIFrameElement): Flat[] {
@@ -33,14 +33,14 @@ export function flatten(iframe: HTMLIFrameElement): Flat[] {
 }
 
 export const ROOT = "root"; // virtual node above <html>
-const blank = (row: Row): Node => ({
+const blank = (row: Row): TreeNode => ({
   row,
   children: [],
   expanded: false,
   status: "idle",
 });
 
-const nodes = new Map<HTMLIFrameElement, Map<string, Node>>();
+const nodes = new Map<HTMLIFrameElement, Map<string, TreeNode>>();
 const listeners = new Set<() => void>();
 const notify = () => listeners.forEach((l) => l());
 
@@ -108,9 +108,11 @@ export function collapse(iframe: HTMLIFrameElement, id: string) {
 
 export async function reveal(iframe: HTMLIFrameElement, id: string) {
   const res = await queryAgent(iframe, "REVEAL", { from: id }); // not `id`: that would overwrite the request id
-  const levels = res.levels as { from: string | null; children: Row[] }[] | null;
+  const levels = res.levels as
+    { from: string | null; children: Row[] }[] | null;
   if (!levels) return false;
-  for (const l of levels) {            // top-down, so each parent exists before its children
+  for (const l of levels) {
+    // top-down, so each parent exists before its children
     const n = getNode(iframe, l.from ?? ROOT);
     if (!n) continue;
     n.children = l.children.map((k) => (upsert(iframe, k), k.id)); // replace, never append
@@ -123,7 +125,6 @@ export async function reveal(iframe: HTMLIFrameElement, id: string) {
   notify();
   return true;
 }
-
 
 export interface Hit {
   screenId: string;
@@ -141,11 +142,17 @@ export async function search(
       try {
         const res = await queryAgent(iframe, "SEARCH", { q });
         const rows = res.hits as Row[];
-        return { total: res.total as number, hits: rows.map((row) => ({ screenId, iframe, row })) };
+        return {
+          total: res.total as number,
+          hits: rows.map((row) => ({ screenId, iframe, row })),
+        };
       } catch {
         return { total: 0, hits: [] as Hit[] };
       }
     }),
   );
-  return { hits: per.flatMap((p) => p.hits), total: per.reduce((n, p) => n + p.total, 0) };
+  return {
+    hits: per.flatMap((p) => p.hits),
+    total: per.reduce((n, p) => n + p.total, 0),
+  };
 }
