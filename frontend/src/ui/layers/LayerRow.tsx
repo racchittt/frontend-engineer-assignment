@@ -20,17 +20,18 @@ export default function LayerRow({
   rowKey,
   top,
   focused,
+  hovered,
   onClick,
 }: {
   row: LayerRowData;
   rowKey: string;
   top: number;
   focused: boolean; // the keyboard cursor is here
+  hovered: boolean; // the pointer is over this element in the preview (or over its hidden descendant)
   onClick: () => void;
 }) {
   const overlay = getOverlay(r.iframe);
   const selected = overlay.selected.some((b) => b.id === r.id);
-  const hovered = !selected && overlay.hover?.id === r.id;
   const indent = r.depth * INDENT;
 
   return (

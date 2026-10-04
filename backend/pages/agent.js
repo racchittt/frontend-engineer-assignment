@@ -109,6 +109,25 @@ console.log("Agent loading...");
     };
   };
 
+  // The ids of an element's ancestors, outermost first, below <body> (html and body are
+  // not rows). Sent with hover so the host can light up the nearest row it is showing
+  // when the hovered element's own row is hidden inside a collapsed parent.
+  const ancestorIds = (el) => {
+    const path = [];
+    for (
+      let n = el.parentElement;
+      n && n !== document.body;
+      n = n.parentElement
+    )
+      path.unshift(idOf(n));
+    return path;
+  };
+  const hoverMessage = (el) => ({
+    type: "HOVER",
+    box: boxOf(el),
+    path: ancestorIds(el),
+  });
+
   // ---- shortcut keys typed in the page ----
   // They never reach the host, so forward them. This MUST be registered before the
   // select-mode gate below: the gate stopImmediatePropagation()s keydown and would starve it.
@@ -274,7 +293,7 @@ console.log("Agent loading...");
     (e) => {
       if (mode !== "select" || !agentPort || e.target === lastHover) return;
       lastHover = e.target;
-      agentPort.postMessage({ type: "HOVER", box: boxOf(e.target) });
+      agentPort.postMessage(hoverMessage(e.target));
     },
     true,
   );
@@ -328,10 +347,9 @@ console.log("Agent loading...");
       if (mode !== "select") return;
       const el = from && byId.get(from)?.deref();
       lastHover = el?.isConnected ? el : null;
-      agentPort.postMessage({
-        type: "HOVER",
-        box: lastHover ? boxOf(lastHover) : null,
-      });
+      agentPort.postMessage(
+        lastHover ? hoverMessage(lastHover) : { type: "HOVER", box: null },
+      );
     },
 
     // Enter / Tab / Shift+Tab, and a layers row click (dir "self")

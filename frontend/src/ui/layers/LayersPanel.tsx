@@ -17,6 +17,7 @@ import {
 } from "../../agent/tree";
 import {
   getActiveIframe,
+  getOverlay,
   onOverlayChange,
   selectNode,
 } from "../../agent/overlay";
@@ -77,6 +78,15 @@ const LayersPanel = ({
       ? flatten(active).map((f) => ({ ...f, iframe: active }))
       : [];
   const keyOf = (r: LayerRowData) => `${activeId}:${r.id}`;
+
+  // The row to light up for the element the pointer is over in the preview: its own row,
+  // or the nearest ancestor row that is showing when its row is inside a collapsed parent.
+  // Hover never opens anything.
+  const hover = active ? getOverlay(active) : null;
+  const shown = new Set(rows.map((r) => r.id));
+  const hoverRowId =
+    hover?.hover &&
+    [...hover.hoverPath, hover.hover.id].reverse().find((id) => shown.has(id));
 
   // virtualizing: only the rows in view (plus a few) are drawn
   const first = Math.max(0, Math.floor(top / ROW_H) - 5);
@@ -223,6 +233,7 @@ const LayersPanel = ({
                 rowKey={keyOf(r)}
                 top={(first + i) * ROW_H}
                 focused={focusKey === keyOf(r)}
+                hovered={hoverRowId === r.id}
                 // row click = select in the preview (the arrow only toggles)
                 onClick={() => {
                   setFocusKey(keyOf(r));

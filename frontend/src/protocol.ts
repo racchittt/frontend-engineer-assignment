@@ -47,7 +47,7 @@ export type Message =
   | { type: "TRACK"; ids: string[] } // follow these elements across re-renders
   | { type: "HOVER_NODE"; from: string | null } // a layers row is hovered
   // agent -> host
-  | { type: "HOVER"; box: Box | null }
+  | { type: "HOVER"; box: Box | null; path?: string[] } // path: ids of the element's ancestors, outermost first
   | { type: "SELECT"; box: Box; shift: boolean }
   | { type: "RECT_UPDATE"; boxes: Box[] }
   | { type: "GONE"; ids: string[] } // couldn't re-identify, drop these

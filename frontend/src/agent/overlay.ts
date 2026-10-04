@@ -12,6 +12,7 @@ import {
 
 export interface OverlayData {
   hover: Box | null;
+  hoverPath: string[]; // ids of the hovered element's ancestors, outermost first
   selected: Box[];
 }
 
@@ -29,7 +30,7 @@ export const getActiveIframe = () => activeIframe;
 export const wasSelectionLost = () => selectionLost;
 
 export const getOverlay = (iframe: HTMLIFrameElement): OverlayData =>
-  overlayData.get(iframe) ?? { hover: null, selected: [] };
+  overlayData.get(iframe) ?? { hover: null, hoverPath: [], selected: [] };
 
 // The selected elements and the preview they live in (null = nothing selected).
 // `boxes` is a new array whenever the selection or its rects change, but not on hover.
@@ -123,7 +124,11 @@ export function hoverNode(iframe: HTMLIFrameElement, from: string | null) {
 // ---- what the previews tell us ----
 onAgentMessage((iframe, msg) => {
   if (msg.type === "HOVER") {
-    overlayData.set(iframe, { ...getOverlay(iframe), hover: msg.box });
+    overlayData.set(iframe, {
+      ...getOverlay(iframe),
+      hover: msg.box,
+      hoverPath: msg.box ? (msg.path ?? []) : [],
+    });
     notifyOverlay();
   }
 
@@ -134,8 +139,10 @@ onAgentMessage((iframe, msg) => {
     const selected = cur.selected.filter((b) => !msg.ids.includes(b.id));
     // the inspector says "This element no longer exists" when removal emptied the selection
     if (cur.selected.length && !selected.length) selectionLost = true;
+    const hoverGone = !!cur.hover && msg.ids.includes(cur.hover.id);
     overlayData.set(iframe, {
-      hover: cur.hover && msg.ids.includes(cur.hover.id) ? null : cur.hover,
+      hover: hoverGone ? null : cur.hover,
+      hoverPath: hoverGone ? [] : cur.hoverPath,
       selected,
     });
     notifyOverlay();
@@ -145,6 +152,7 @@ onAgentMessage((iframe, msg) => {
     const fresh = new Map(msg.boxes.map((b) => [b.id, b]));
     const cur = getOverlay(iframe);
     overlayData.set(iframe, {
+      ...cur,
       hover: cur.hover ? (fresh.get(cur.hover.id) ?? cur.hover) : null,
       selected: cur.selected.map((b) => fresh.get(b.id) ?? b),
     });
