@@ -28,7 +28,7 @@ export default function LayerRow({
   top: number;
   focused: boolean; // the keyboard cursor is here
   hovered: boolean; // the pointer is over this element in the preview (or over its hidden descendant)
-  onClick: () => void;
+  onClick: (shift: boolean) => void;
 }) {
   const overlay = getOverlay(r.iframe);
   const selected = overlay.selected.some((b) => b.id === r.id);
@@ -41,8 +41,8 @@ export default function LayerRow({
       aria-level={r.depth + 1}
       aria-selected={selected}
       aria-expanded={r.node.row.hasChildren ? r.node.expanded : undefined}
-      onClick={onClick}
-      className={`flex cursor-pointer items-center whitespace-nowrap pr-3 text-xs ${
+      onClick={(e) => onClick(e.shiftKey)}
+      className={`flex cursor-pointer select-none items-center whitespace-nowrap pr-3 text-xs ${
         selected
           ? "bg-purple-50 font-medium text-slate-900 shadow-[inset_2px_0_0_var(--color-purple-500)]"
           : hovered

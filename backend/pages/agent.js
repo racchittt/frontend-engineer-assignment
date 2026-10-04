@@ -150,6 +150,24 @@ console.log("Agent loading...");
     true,
   );
 
+  // Ctrl/Cmd + wheel over the page: the wheel events go to the page, not the host, so the
+  // browser would zoom the whole host page. Stop that and let the host zoom the board.
+  // Both modes. Plain wheel is left alone: it scrolls the page.
+  window.addEventListener(
+    "wheel",
+    (e) => {
+      if (!(e.ctrlKey || e.metaKey) || !agentPort) return;
+      e.preventDefault();
+      agentPort.postMessage({
+        type: "ZOOM_WHEEL",
+        dy: e.deltaY,
+        x: e.clientX,
+        y: e.clientY,
+      });
+    },
+    { capture: true, passive: false },
+  );
+
   // ---- select-mode gate: clicks, focus and submits never reach the page ----
   const BLOCK = [
     "pointerdown",
@@ -448,6 +466,37 @@ console.log("Agent loading...");
       lastHover = el?.isConnected ? el : null;
       agentPort.postMessage(
         lastHover ? hoverMessage(lastHover) : { type: "HOVER", box: null },
+      );
+    },
+
+    // a layers row was clicked: scroll this page's own scrollers (never the host) so the
+    // element is in view. Nothing moves if it is already visible.
+    SCROLL_TO({ from }) {
+      const el = byId.get(from)?.deref();
+      if (!el?.isConnected || getComputedStyle(el).position === "fixed") return;
+      // how far to move so [start, end] fits in [lo, hi]: 0 if it fits, else centre it
+      // (or line up its start if it is bigger than the space)
+      const delta = (start, end, lo, hi) =>
+        start >= lo && end <= hi
+          ? 0
+          : end - start > hi - lo
+            ? start - lo
+            : (start + end) / 2 - (lo + hi) / 2;
+      for (let p = el.parentElement; p; p = p.parentElement) {
+        const cs = getComputedStyle(p);
+        if (p === document.body || p === document.documentElement) continue;
+        if (!/(auto|scroll)/.test(cs.overflowX + cs.overflowY)) continue;
+        const r = el.getBoundingClientRect(); // again each time: the last scroll moved it
+        const pr = p.getBoundingClientRect();
+        const left = pr.left + p.clientLeft;
+        const top = pr.top + p.clientTop;
+        p.scrollLeft += delta(r.left, r.right, left, left + p.clientWidth);
+        p.scrollTop += delta(r.top, r.bottom, top, top + p.clientHeight);
+      }
+      const r = el.getBoundingClientRect();
+      window.scrollBy(
+        delta(r.left, r.right, 0, window.innerWidth),
+        delta(r.top, r.bottom, 0, window.innerHeight),
       );
     },
 

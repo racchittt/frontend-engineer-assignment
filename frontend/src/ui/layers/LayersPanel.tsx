@@ -255,9 +255,9 @@ const LayersPanel = ({
                 focused={focusKey === keyOf(r)}
                 hovered={hoverRowId === r.id}
                 // row click = select in the preview (the arrow only toggles)
-                onClick={guard(LAYERS, () => {
+                onClick={guard(LAYERS, (shift: boolean) => {
                   setFocusKey(keyOf(r));
-                  selectIn(r.iframe, r.id);
+                  selectIn(r.iframe, r.id, shift);
                 })}
               />
             ))}

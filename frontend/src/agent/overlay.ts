@@ -90,9 +90,17 @@ function select(iframe: HTMLIFrameElement, box: Box, shift: boolean) {
 }
 
 // A layers row was clicked / Enter: ask the agent for the box, then select it like a click would.
-export async function selectNode(iframe: HTMLIFrameElement, id: string) {
+// Shift adds or removes the row, like Shift+click in the preview.
+export async function selectNode(
+  iframe: HTMLIFrameElement,
+  id: string,
+  shift = false,
+) {
   const res = await queryAgent(iframe, "NAVIGATE", { from: id, dir: "self" });
-  if (res.box) select(iframe, res.box, false);
+  if (!res.box) return;
+  select(iframe, res.box, shift);
+  // if it is out of view inside the page, scroll that page (and only it) to show it
+  postToAgent(iframe, { type: "SCROLL_TO", from: id });
 }
 
 // Keyboard move (Enter, Tab...): swap the one selected element `from` for `box`.

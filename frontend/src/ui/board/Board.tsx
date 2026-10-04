@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
-import { retryIframe, watchIframe } from "../../agent/connection";
+import {
+  onAgentMessage,
+  retryIframe,
+  watchIframe,
+} from "../../agent/connection";
 import { panBy, zoomAt, type Camera } from "../../camera";
 import { RegionBoundary } from "../RegionBoundary";
 import { useActiveIframe } from "../useActiveIframe";
@@ -33,17 +37,38 @@ export default function Board({
     const element = boardRef.current;
     if (!element) return;
 
-    const onWheel = (e: WheelEvent) => {
-      if (!e.ctrlKey) return; // plain scroll: leave it alone
-      e.preventDefault(); // stop the browser's own page zoom
+    // zoom around a point given in screen pixels
+    const zoomWheel = (clientX: number, clientY: number, dy: number) => {
       const rect = element.getBoundingClientRect();
-      const px = e.clientX - rect.left; // cursor relative to the board
-      const py = e.clientY - rect.top;
-      setCamera((c) => zoomAt(c, px, py, c.z * Math.exp(-e.deltaY * 0.01)));
+      const px = clientX - rect.left; // cursor relative to the board
+      const py = clientY - rect.top;
+      setCamera((c) => zoomAt(c, px, py, c.z * Math.exp(-dy * 0.01)));
     };
 
+    const onWheel = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return; // plain scroll: leave it alone
+      e.preventDefault(); // stop the browser's own page zoom
+      zoomWheel(e.clientX, e.clientY, e.deltaY);
+    };
     element.addEventListener("wheel", onWheel, { passive: false });
-    return () => element.removeEventListener("wheel", onWheel);
+
+    // Ctrl+wheel over a preview goes to the page, whose agent forwards it. Its x, y are in
+    // the page's own pixels: scale them by the preview's on-screen size to get screen pixels.
+    const stop = onAgentMessage((iframe, msg) => {
+      if (msg.type !== "ZOOM_WHEEL") return;
+      const r = iframe.getBoundingClientRect();
+      const s = r.width / iframe.offsetWidth;
+      zoomWheel(
+        r.left + (iframe.clientLeft + msg.x) * s,
+        r.top + (iframe.clientTop + msg.y) * s,
+        msg.dy,
+      );
+    });
+
+    return () => {
+      element.removeEventListener("wheel", onWheel);
+      stop();
+    };
   }, []);
 
   // the zoom buttons zoom around the middle of the visible board

@@ -30,7 +30,9 @@ export default function Outline({
       }}
     >
       <span
-        className="absolute -top-5 left-0 max-w-48 truncate rounded-sm px-1.5 text-[10px] font-medium leading-4 text-white whitespace-nowrap shadow-sm"
+        className={`absolute ${
+          box.y * s < 20 ? "top-full" : "-top-5" // no room above (20px): put it below
+        } left-0 max-w-48 truncate rounded-sm px-1.5 text-[10px] font-medium leading-4 text-white whitespace-nowrap shadow-sm`}
         style={{ background: line }}
       >
         {box.label}

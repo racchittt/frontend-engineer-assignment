@@ -47,7 +47,9 @@ export type Message =
   | { type: "TRACK"; ids: string[] } // follow these elements across re-renders
   | { type: "KEEP"; ids: string[] } // the layers rows that are open: follow them too
   | { type: "HOVER_NODE"; from: string | null } // a layers row is hovered
+  | { type: "SCROLL_TO"; from: string } // a layers row was clicked: scroll the page to show it
   // agent -> host
+  | { type: "ZOOM_WHEEL"; dy: number; x: number; y: number } // Ctrl+wheel over the page (x, y: pointer in the page's viewport)
   | { type: "HOVER"; box: Box | null; path?: string[] } // path: ids of the element's ancestors, outermost first
   | { type: "SELECT"; box: Box; shift: boolean }
   | { type: "BACKGROUND"; shift: boolean } // the page background was clicked
