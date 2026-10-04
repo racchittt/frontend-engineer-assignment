@@ -9,6 +9,7 @@ import { panBy, zoomAt, type Camera } from "../../camera";
 import { Alert } from "../icons";
 import { useActiveIframe } from "../useActiveIframe";
 import OutlineLayer from "./OutlineLayer";
+import ZoomControl from "./ZoomControl";
 
 export interface Screen {
   id: string;
@@ -17,6 +18,7 @@ export interface Screen {
 }
 
 const GRID = 24; // px between the dots of the canvas, at 100%
+const ZOOM_STEP = 1.25; // one press of + or -
 
 // The pannable, zoomable board of previews, with the outlines drawn over it.
 export default function Board({
@@ -63,6 +65,14 @@ export default function Board({
     element.addEventListener("wheel", onWheel, { passive: false });
     return () => element.removeEventListener("wheel", onWheel);
   }, []);
+
+  // the zoom buttons zoom around the middle of the visible board
+  const zoomBy = (to: (z: number) => number) => {
+    const el = boardRef.current;
+    if (!el) return;
+    const { width, height } = el.getBoundingClientRect();
+    setCamera((c) => zoomAt(c, width / 2, height / 2, to(c.z)));
+  };
 
   const onPointerDown = (e: React.PointerEvent) => {
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -167,9 +177,12 @@ export default function Board({
         </div>
       </div>
       <OutlineLayer iframeRefs={iframeRefs} camera={camera} />
-      <div className="pointer-events-none absolute bottom-3 left-3 rounded-md bg-white/90 px-2 py-1 font-mono text-[11px] text-slate-500 shadow-sm ring-1 ring-slate-900/5">
-        {Math.round(camera.z * 100)}%
-      </div>
+      <ZoomControl
+        zoom={camera.z}
+        onZoomIn={() => zoomBy((z) => z * ZOOM_STEP)}
+        onZoomOut={() => zoomBy((z) => z / ZOOM_STEP)}
+        onReset={() => zoomBy(() => 1)}
+      />
     </div>
   );
 }
