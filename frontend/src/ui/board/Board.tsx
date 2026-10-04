@@ -84,7 +84,7 @@ export default function Board({
   const endDrag = () => setIsPanning(false);
 
   return (
-    <div className="relative min-w-0 flex-1">
+    <div className="relative min-w-0 flex-1 select-none">
       <div
         ref={boardRef}
         className="h-full touch-none overflow-hidden"

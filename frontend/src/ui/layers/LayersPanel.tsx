@@ -104,6 +104,30 @@ const LayersPanel = ({
       boxRef.current.scrollTop = scrolls.current.get(active) ?? 0;
   }, [active, q]);
 
+  // When the page adds or removes rows above the ones you are looking at, keep those rows
+  // where they are. We remember the rows in view, and after a change find the first of them
+  // that is still there (some rows are recreated by the page and don't survive). At the very
+  // top there is nothing to hold on to, so new rows push in at the top.
+  const inView = useRef<{ key: string; index: number }[]>([]);
+  useEffect(() => {
+    const box = boxRef.current;
+    if (!box) return;
+    const seen = inView.current;
+    if (seen.length && seen[0].index > 0) {
+      for (const { key, index } of seen) {
+        const i = rows.findIndex((r) => keyOf(r) === key);
+        if (i < 0) continue;
+        if (i !== index) box.scrollTop += (i - index) * ROW_H;
+        break;
+      }
+    }
+    const at = Math.round(box.scrollTop / ROW_H);
+    const count = Math.ceil(box.clientHeight / ROW_H);
+    inView.current = rows
+      .slice(at, at + count)
+      .map((r, n) => ({ key: keyOf(r), index: at + n }));
+  });
+
   // scroll to a revealed row
   useEffect(() => {
     // no scroll box while search results are showing: keep it pending until the tree is back

@@ -45,12 +45,15 @@ export type Message =
   // host -> agent
   | { type: "SET_MODE"; mode: "select" | "interact" }
   | { type: "TRACK"; ids: string[] } // follow these elements across re-renders
+  | { type: "KEEP"; ids: string[] } // the layers rows that are open: follow them too
   | { type: "HOVER_NODE"; from: string | null } // a layers row is hovered
   // agent -> host
   | { type: "HOVER"; box: Box | null; path?: string[] } // path: ids of the element's ancestors, outermost first
   | { type: "SELECT"; box: Box; shift: boolean }
+  | { type: "BACKGROUND"; shift: boolean } // the page background was clicked
   | { type: "RECT_UPDATE"; boxes: Box[] }
   | { type: "GONE"; ids: string[] } // couldn't re-identify, drop these
+  | { type: "CHILDREN_CHANGED"; ids: (string | null)[] } // these parents got new children (null = <body>)
   | { type: "KEY"; key: string; shift: boolean }; // a key typed inside the preview
 
 // ---- requests: host -> agent, answered by a reply with the same request id ----

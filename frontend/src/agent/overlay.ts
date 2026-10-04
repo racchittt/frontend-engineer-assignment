@@ -134,6 +134,14 @@ onAgentMessage((iframe, msg) => {
 
   if (msg.type === "SELECT") select(iframe, msg.box, msg.shift);
 
+  // clicking the page background clears the selection (Shift + click leaves it alone),
+  // and makes that preview the active one, like any click in Select mode
+  if (msg.type === "BACKGROUND") {
+    activeIframe = iframe;
+    if (!msg.shift) clearSelection();
+    else notifyOverlay();
+  }
+
   if (msg.type === "GONE") {
     const cur = getOverlay(iframe);
     const selected = cur.selected.filter((b) => !msg.ids.includes(b.id));

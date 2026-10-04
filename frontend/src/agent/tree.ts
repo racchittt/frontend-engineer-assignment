@@ -1,11 +1,17 @@
 import type { Row } from "../protocol";
-import { queryAgent, onIframeReset } from "./connection";
+import {
+  onAgentMessage,
+  onIframeReset,
+  postToAgent,
+  queryAgent,
+} from "./connection";
 
 export interface TreeNode {
   row: Row;
   children: string[];
   expanded: boolean;
   status: "idle" | "loading" | "error";
+  dirty?: boolean; // the page changed this node's children while its load was running
 }
 
 export interface Flat {
@@ -43,6 +49,7 @@ const notify = () => listeners.forEach((l) => l());
 // new document in this iframe (navigation or retry): the old ids mean nothing now
 onIframeReset((iframe) => {
   nodes.delete(iframe);
+  lastKept.delete(iframe);
   notify();
 });
 export function onTreeChange(l: () => void) {
@@ -74,10 +81,66 @@ function upsert(iframe: HTMLIFrameElement, row: Row) {
   else t.set(row.id, blank(row));
 }
 
+// Tell the agent which rows are open, so it can follow them if the page rebuilds its DOM
+// (an open row keeps its place and its open state, instead of coming back closed).
+const lastKept = new Map<HTMLIFrameElement, string>();
+function syncKept(iframe: HTMLIFrameElement) {
+  const ids = [...table(iframe)]
+    .filter(([id, n]) => id !== ROOT && n.expanded)
+    .map(([id]) => id)
+    .sort();
+  const key = ids.join(",");
+  if (lastKept.get(iframe) === key) return;
+  lastKept.set(iframe, key);
+  postToAgent(iframe, { type: "KEEP", ids });
+}
+
+// Drop rows the page removed, and everything under them
+function prune(iframe: HTMLIFrameElement, ids: string[]) {
+  const t = table(iframe);
+  const drop = (id: string) => {
+    t.get(id)?.children.forEach(drop);
+    t.delete(id);
+  };
+  ids.forEach(drop);
+}
+
+// The page changed these parents' children. Re-read the ones that are open and replace
+// their children: rows that are still there keep their own state, the others drop out.
+function refresh(iframe: HTMLIFrameElement, parents: (string | null)[]) {
+  for (const parent of parents) {
+    const n = getNode(iframe, parent ?? ROOT);
+    if (!n || !n.expanded) continue; // closed rows read fresh when they are opened
+    if (n.status === "loading") {
+      n.dirty = true; // its reply may already be out of date: read again when it lands
+      continue;
+    }
+    queryAgent(iframe, "GET_CHILDREN", { from: parent })
+      .then((res) => {
+        if (!res.children) return; // the parent itself is gone: its own parent refreshes
+        const next = res.children.map((k) => (upsert(iframe, k), k.id));
+        prune(
+          iframe,
+          n.children.filter((c) => !next.includes(c)),
+        );
+        n.children = next;
+        n.row.hasChildren = next.length > 0;
+        syncKept(iframe);
+        notify();
+      })
+      .catch(() => {}); // keep what we have; the next change tries again
+  }
+}
+
+onAgentMessage((iframe, msg) => {
+  if (msg.type === "CHILDREN_CHANGED") refresh(iframe, msg.ids);
+});
+
 export function expand(iframe: HTMLIFrameElement, id: string) {
   const n = getNode(iframe, id);
   if (!n) return;
   n.expanded = true;
+  syncKept(iframe);
   if (n.status === "loading") return; // one request in flight per node
   n.status = "loading";
   notify();
@@ -91,13 +154,20 @@ export function expand(iframe: HTMLIFrameElement, id: string) {
     .catch(() => {
       n.status = "error";
     }) // only this row fails
-    .finally(notify);
+    .finally(() => {
+      notify();
+      if (n.dirty) {
+        n.dirty = false;
+        refresh(iframe, [id === ROOT ? null : id]);
+      }
+    });
 }
 
 export function collapse(iframe: HTMLIFrameElement, id: string) {
   const n = getNode(iframe, id);
   if (n) {
     n.expanded = false;
+    syncKept(iframe);
     notify();
   }
 }
@@ -117,6 +187,7 @@ export async function reveal(iframe: HTMLIFrameElement, id: string) {
     // the spinner and let a click send a second request.
     if (n.status !== "loading") n.status = "idle";
   }
+  syncKept(iframe);
   notify();
   return true;
 }

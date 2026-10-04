@@ -15,6 +15,7 @@ console.log("Agent loading...");
   let agentPort = null; // the host's end of the channel, once connected
   let mode = "select";
   let tracked = new Set(); // ids of the elements the host wants followed (the selection)
+  let kept = new Set(); // ids of the rows the layers tree has open: followed for identity only
   let lastHover = null; // the element currently outlined as hovered
 
   const ids = new WeakMap(); // element -> id, assigned the first time we see it
@@ -31,10 +32,14 @@ console.log("Agent loading...");
     return ids.get(el);
   };
 
-  const labelOf = (el) =>
-    el.dataset?.name ||
-    el.dataset?.key ||
-    el.tagName.toLowerCase() + (el.id ? `#${el.id}` : "");
+  // An element's name: its data-name, else tag + first class (button.primary), else
+  // tag + id (div#hero), else the tag alone. data-key is not part of the name.
+  const labelOf = (el) => {
+    if (el.dataset?.name) return el.dataset.name;
+    const tag = el.tagName.toLowerCase();
+    const cls = el.classList[0];
+    return cls ? `${tag}.${cls}` : el.id ? `${tag}#${el.id}` : tag;
+  };
 
   // an element as a layers row
   const rowOf = (el) => ({
@@ -195,19 +200,54 @@ console.log("Agent loading...");
     }
     return { anchor: null, path: "" };
   }
-  const fingerprint = (el) => ({ ...anchorOf(el), sig: sigOf(el) });
+  // No key anywhere: the element and each ancestor (up to <body>), nearest first, with the
+  // steps down from that ancestor to the element. One of them may be easier to find than
+  // the element itself (a "5s ago" span is not unique, the row around it is).
+  function chainOf(el) {
+    const out = [];
+    const steps = [];
+    for (let n = el; n && n !== document.body; n = n.parentElement) {
+      out.push({ sig: sigOf(n), path: steps.join(">") });
+      steps.unshift(`${n.tagName}:${[...n.parentElement.children].indexOf(n)}`);
+    }
+    return out;
+  }
+  const fingerprint = (el) => {
+    const a = anchorOf(el);
+    return { ...a, sig: sigOf(el), chain: a.anchor ? null : chainOf(el) };
+  };
+  // walk "TAG:index>TAG:index" down from `top`; null if the shape differs
+  function walkDown(top, path) {
+    let el = top;
+    for (const step of path ? path.split(">") : []) {
+      const [tag, i] = step.split(":");
+      el = el.children[+i];
+      if (!el || el.tagName !== tag) return null;
+    }
+    return el;
+  }
+  const loose = (s) => s.replace(/\d+/g, "#"); // a ticking "5s ago" must not hide a row
   const flat = (nodes) =>
     nodes.flatMap((n) =>
       n.nodeType === 1 ? [n, ...n.querySelectorAll("*")] : [],
     );
 
-  // the host selected these: remember what they look like
-  function track(list) {
-    tracked = new Set(list);
+  // remember what these look like, so they can be found again after a re-render
+  function remember(list) {
     list.forEach((id) => {
       const el = byId.get(id)?.deref();
       if (el) fps.set(id, fingerprint(el));
     });
+  }
+  // the host selected these
+  function track(list) {
+    tracked = new Set(list);
+    remember(list);
+  }
+  // the host has these rows open in the layers tree
+  function keep(list) {
+    kept = new Set(list);
+    remember(list);
   }
 
   // Find tracked elements that were replaced. Prefer dropping to guessing.
@@ -220,7 +260,7 @@ console.log("Agent loading...");
     const taken = new Set();
     const gone = [];
 
-    tracked.forEach((id) => {
+    new Set([...tracked, ...kept]).forEach((id) => {
       if (byId.get(id)?.deref()?.isConnected) return; // still there
       const fp = fps.get(id);
       let hit = null;
@@ -232,10 +272,19 @@ console.log("Agent loading...");
         });
         if (m.length === 1) hit = m[0];
       } else if (fp) {
-        // no key anywhere: only an exact, one-to-one signature match counts
-        const was = removed.filter((e) => sigOf(e) === fp.sig).length;
-        const m = added.filter((e) => addedFps.get(e).sig === fp.sig);
-        if (was === 1 && m.length === 1) hit = m[0];
+        // no key anywhere: only a one-to-one signature match counts, for the element or
+        // else the nearest ancestor that has one. Exact first, then digits ignored.
+        search: for (const { sig, path } of fp.chain) {
+          for (const view of [(s) => s, loose]) {
+            const want = view(sig);
+            const was = removed.filter((e) => view(sigOf(e)) === want).length;
+            const m = added.filter((e) => view(addedFps.get(e).sig) === want);
+            if (was === 1 && m.length === 1) {
+              hit = walkDown(m[0], path);
+              if (hit) break search;
+            }
+          }
+        }
       }
       if (hit && !taken.has(hit)) {
         taken.add(hit);
@@ -249,17 +298,47 @@ console.log("Agent loading...");
 
     gone.forEach((id) => {
       tracked.delete(id);
+      kept.delete(id);
       fps.delete(id);
     });
     return gone;
   }
 
+  // Tell the host which parents got new children, so the layers tree can follow the page.
+  // Batched: a page that rebuilds a list sends one notice, not one per node.
+  const changedParents = new Set();
+  let changedTimer = null;
+  function announceChanges() {
+    clearTimeout(changedTimer);
+    changedTimer = setTimeout(() => {
+      const parents = [];
+      changedParents.forEach((el) => {
+        if (el === document.body)
+          parents.push(null); // null = the top level
+        else if (ids.has(el) && document.body.contains(el))
+          parents.push(ids.get(el)); // only elements the host could know about
+      });
+      changedParents.clear();
+      if (parents.length && agentPort)
+        agentPort.postMessage({ type: "CHILDREN_CHANGED", ids: parents });
+    }, 100);
+  }
+
   new MutationObserver((records) => {
-    if (!tracked.size) return;
-    const gone = reidentify(records);
-    if (gone.length && agentPort)
-      agentPort.postMessage({ type: "GONE", ids: gone });
-    schedule();
+    // first re-find the elements the host follows, so the ids it gets next still match
+    if (tracked.size || kept.size) {
+      const gone = reidentify(records);
+      if (gone.length && agentPort)
+        agentPort.postMessage({ type: "GONE", ids: gone });
+    }
+    // a hovered element the page removed: clear the hover
+    if (lastHover && !lastHover.isConnected) {
+      lastHover = null;
+      if (agentPort) agentPort.postMessage({ type: "HOVER", box: null });
+    }
+    records.forEach((r) => changedParents.add(r.target));
+    announceChanges();
+    if (tracked.size) schedule();
   }).observe(document, { childList: true, subtree: true });
 
   // ---- rects: keep the host's outlines glued to their elements ----
@@ -287,11 +366,22 @@ console.log("Agent loading...");
   window.addEventListener("resize", schedule);
 
   // ---- pointer ----
+  // The page background (<html> / <body>) is not an element here: it is never hovered
+  // or selected. Clicking it clears the selection instead.
+  const isBackground = (el) =>
+    el === document.documentElement || el === document.body;
+
   // Hover + select. Plain capture listeners, not in BLOCK, so the gate doesn't kill them.
   window.addEventListener(
     "pointermove",
     (e) => {
       if (mode !== "select" || !agentPort || e.target === lastHover) return;
+      if (isBackground(e.target)) {
+        if (!lastHover) return; // nothing was hovered, nothing to clear
+        lastHover = null;
+        agentPort.postMessage({ type: "HOVER", box: null });
+        return;
+      }
       lastHover = e.target;
       agentPort.postMessage(hoverMessage(e.target));
     },
@@ -314,6 +404,10 @@ console.log("Agent loading...");
     "pointerup",
     (e) => {
       if (mode !== "select" || !agentPort || e.button !== 0) return;
+      if (isBackground(e.target)) {
+        agentPort.postMessage({ type: "BACKGROUND", shift: e.shiftKey });
+        return;
+      }
       agentPort.postMessage({
         type: "SELECT",
         box: boxOf(e.target),
@@ -340,6 +434,11 @@ console.log("Agent loading...");
 
     TRACK({ ids: list }) {
       track(list);
+    },
+
+    // the layers tree's open rows: follow them if the page rebuilds its DOM
+    KEEP({ ids: list }) {
+      keep(list);
     },
 
     // a layers-panel row is hovered: outline that element, same path as a real hover
@@ -422,9 +521,7 @@ console.log("Agent loading...");
       let total = 0;
       if (q) {
         for (const el of document.body.querySelectorAll("*")) {
-          const hay =
-            `${labelOf(el)} ${el.getAttribute("class") ?? ""}`.toLowerCase();
-          if (!hay.includes(q)) continue;
+          if (!labelOf(el).toLowerCase().includes(q)) continue;
           if (hits.length < LIMIT) hits.push(rowOf(el));
           total++;
         }
