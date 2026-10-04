@@ -1,6 +1,7 @@
 import { useEffect, useRef, type RefObject } from "react";
 import { reveal } from "../../agent/tree";
 import { getOverlay, onOverlayChange } from "../../agent/overlay";
+import { fail, LAYERS } from "../../regions";
 
 // When something is selected in a preview, open its row in the tree.
 // `onRevealed(key)` is called once the rows exist, so the panel can scroll to `key`
@@ -42,8 +43,10 @@ export function useRevealOnSelect(
             // a newer selection may have replaced this one while we waited
             if (ok && last.current === key) callback.current(key);
           })
-          .catch(() => {
-            last.current = ""; // timeout: allow a retry
+          .catch((err) => {
+            if (last.current !== key) return; // a newer selection took over: not a failure
+            last.current = ""; // allow another try
+            fail(LAYERS, err);
           });
       }),
     [iframeRefs],

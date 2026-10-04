@@ -307,3 +307,71 @@ Example: select a card, press Enter
     - Checked with two previews: Sign up showed its own tree, and going back to Landing showed it still open.
 - Search now covers the active preview only, and results do not show a screen name. The panel does not need the screens list any more.
 - Error rows now say "Couldn't load" with a Retry.
+
+
+## Commit 14: 
+
+- Refactor
+    - `host-bridge.ts` is split into 
+        - `agent/connection.ts` (ports, handshake, requests), 
+        - `agent/overlay.ts` (mode, hover, selection) and 
+        - `agent/keys.ts` (shortcuts). 
+        - Imports go one way: `connection` <- `overlay` <- `keys`. `connection` knows nothing about the overlay, it only offers subscriptions (`onAgentMessage`, `onIframeConnect`, `onIframeReset`, `onErrorChange`).
+    - `protocol.ts` holds every message. `Message` is the one-way union. `Requests` maps each request (NAVIGATE, GET_CHILDREN, REVEAL, SEARCH, INSPECT) to its payload and reply, so `queryAgent` is typed both ways.
+    - App is split into `ui/board`, `ui/layers` and `ui/inspector`. The layers panel is a row, a search box and some hooks. The inspector is sections.
+    - `agent.js` is one classic script (24 pages load it with a plain `<script>`), so it stays in one file. It is now in sections (state, elements, keys, select gate, identity, rects, pointer, requests, connection), and requests go through a handler table.
+- Restyle. Every component got the same look: slate and white, a purple selection (`#ad46ff`), a blue hover, theme tokens in `index.css`. Row height is 26px now.
+- Zoom control: minus, plus and the percentage on the board. It uses the same camera as Ctrl+wheel.
+- Hover shows its ancestors.
+    - The agent sends the ids of the hovered element's ancestors with `HOVER`.
+    - If the hovered element has no row (its parent is closed), the nearest open ancestor's row turns blue.
+- The layers panel follows the page.
+    - The agent watches the DOM and sends `CHILDREN_CHANGED` (after 100ms) with the parents that changed.
+    - The host re-reads only the parents that are open and replaces their children. Rows that are still there keep their open state.
+    - The agent follows the open rows too (`KEEP`), the same way it follows the selection, so an open row survives a re-render.
+    - If a parent's load is running when the change arrives, it is marked dirty and read again when it lands.
+- Page 4 (activity feed): names are the same for every row (`li`), not `activity-##` for half of them. The name rule is from the README: `data-name`, else `tag.firstClass`, else `tag#id`, else the tag. `data-key` is not part of a name.
+- Page background.
+    - `html` and `body` are not elements, so hovering the background shows nothing and clicking it clears the selection (`BACKGROUND`). Shift+click leaves the selection alone.
+    - The board is `select-none`. Dragging to pan was selecting the text of the previews and flashing blue.
+- Selection across re-renders, for elements with no `data-key` (page 4, even rows).
+    - They were matched by their exact text, and "Ns ago" changes on every render, so they were dropped.
+    - Now: exact text first, then the same text with digits ignored. It must still be one-to-one.
+    - Spans inside a row ("10s ago", the avatar) look the same in every row. The agent keeps the element's ancestors too, finds the nearest ancestor that is unique (the `li`), and walks down by position.
+    - Two identical candidates are still dropped. It does not guess.
+
+
+## Commit 15: 
+
+- #### Failures (R6). One broken part shows an error with a Retry in its own region, and the rest keeps working. `report()` from `frontend/report.js` is used as it is. A small `report.d.ts` gives it types.
+- Regions (`regions.ts`).
+    - A region is the board, one preview, the layers panel, one row's child loading, the inspector, or its Details section. Each one has an attempt counter and at most one error showing.
+    - `fail(scope, error, at)` shows the error and calls `report()` once. If an error is already showing for that region, a second one is dropped. That is the "exactly once".
+    - `retry(scope)` starts a new attempt and clears the error. So a retry that fails again is a new failure and reports again.
+    - `at` is the attempt the work started in. A failure from an old attempt is ignored, so a late answer after a retry changes nothing and reports nothing.
+    - Previews and rows have one region per screen (and row). The others have one region each. `screenId` there is only for `report()`.
+- What is not a failure.
+    - A request that was cancelled or replaced is a `Cancelled` error or an `AbortError`. `fail` ignores both: nothing is shown, nothing is reported.
+    - The Details `AbortController` fires on every selection change, so without this rule every click would show a false error.
+    - `teardown` (navigation or Retry) rejects waiting requests with `Cancelled`. A reply that lands after the page was replaced is dropped (the row is checked to still be in the tree).
+- Where errors are caught.
+    - Drawing: `RegionBoundary`, a class (React only has class boundaries). It does not see async errors, so those go through `fail` or `guard`.
+    - `guard(scope, fn)` wraps handlers, timers, listeners and promise continuations. A throw or a rejection fails the region instead of getting lost. It is used on the layers click and keys, the shortcuts, the search timer, and the messages from a preview.
+    - A listener that throws in the connection layer fails that preview's region and does not stop the other listeners.
+- Each region.
+    - Board: `GET /screens` failing, or bad data, shows the error in the board area. Retry loads the screens again.
+    - Preview: no hello in 10 seconds shows "Couldn't connect to this preview" on that preview. The iframe stays under it, so a late connect clears the error. Retry reloads only that iframe.
+    - Layers panel: render errors and failed handlers replace the panel with the error. Search failing also lands here, unless the user typed past it.
+    - Row: a failed `GET_CHILDREN` marks that row "Couldn't load" with a Retry, and nothing else. The top level counts as a row too.
+    - Inspector: a render error, or the live values request failing, shows the error. The board and the layers panel keep working.
+    - Details: its own fetch, with the error shown for the current element only. Live values above it keep showing. A new element clears the old error.
+- Errors inside a page: the agent sends `PAGE_ERROR` for an uncaught error or rejection. The preview gets a small "Page error" badge, and hovering shows the message. The preview still works, so nothing is covered. Each different message is reported once per page load. Page 6 does this after 4 seconds, and 4 screens use it.
+- Dev menu (R6.7), only with `import.meta.env.DEV`.
+    - One button per failure: screens, a preview that never connects, layers and inspector render errors, a row, live values, Details failing, Details with bad data.
+    - A "throw in" list for a click, the next key, the next preview message, a timer and a response, in the region picked.
+    - A fault stays on until "Clear all faults", so Retry fails again and shows as a new report.
+- Bugs found while checking.
+    - The region id had `screenId` in it for every kind. The inspector and Details recorded errors under one id and the screen watched another, so they never showed. Now only previews and rows have it.
+    - The layers panel took a snapshot of the iframes when it mounted. After the board's Retry rebuilt them, the panel went blank. It now asks the connection for the screen of the active iframe.
+    - A Retry has to remount the children, or React skips them as unchanged. Previews are the exception, so their iframe is not rebuilt.
+- Not done: after Retry on the layers panel the search text and cursor row are lost, and the selected row is not revealed again until the next selection.

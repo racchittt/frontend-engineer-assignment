@@ -1,11 +1,12 @@
 import { useEffect } from "react";
 import { handleKey } from "../agent/keys";
+import { BOARD, guard } from "../regions";
 
 // Keyboard shortcuts for keys the host page sees. Keys typed inside a preview arrive
 // as KEY messages instead (see agent/keys.ts).
 export function useShortcuts() {
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
+    const onKey = guard(BOARD, (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return; // browser shortcuts: Ctrl+V, Ctrl+Shift+I...
       const t = e.target as HTMLElement;
       if (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))
@@ -17,7 +18,7 @@ export function useShortcuts() {
       )
         return;
       if (handleKey(e.key, e.shiftKey)) e.preventDefault();
-    };
+    });
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);

@@ -1,9 +1,18 @@
 import type { Row } from "../protocol";
 import {
+  attemptOf,
+  dropRows,
+  fail,
+  isCancel,
+  retry,
+  type Scope,
+} from "../regions";
+import {
   onAgentMessage,
   onIframeReset,
   postToAgent,
   queryAgent,
+  screenIdOf,
 } from "./connection";
 
 export interface TreeNode {
@@ -48,6 +57,7 @@ const notify = () => listeners.forEach((l) => l());
 
 // new document in this iframe (navigation or retry): the old ids mean nothing now
 onIframeReset((iframe) => {
+  dropRows(screenIdOf(iframe));
   nodes.delete(iframe);
   lastKept.delete(iframe);
   notify();
@@ -95,6 +105,13 @@ function syncKept(iframe: HTMLIFrameElement) {
   postToAgent(iframe, { type: "KEEP", ids });
 }
 
+// Each row's child loading is its own region, so one row failing touches nothing else
+const rowScope = (iframe: HTMLIFrameElement, id: string): Scope => ({
+  kind: "layers-row",
+  screenId: screenIdOf(iframe),
+  row: id,
+});
+
 // Drop rows the page removed, and everything under them
 function prune(iframe: HTMLIFrameElement, ids: string[]) {
   const t = table(iframe);
@@ -115,8 +132,11 @@ function refresh(iframe: HTMLIFrameElement, parents: (string | null)[]) {
       n.dirty = true; // its reply may already be out of date: read again when it lands
       continue;
     }
+    const scope = rowScope(iframe, parent ?? ROOT);
+    const at = attemptOf(scope);
     queryAgent(iframe, "GET_CHILDREN", { from: parent })
       .then((res) => {
+        if (getNode(iframe, parent ?? ROOT) !== n) return; // the page was replaced meanwhile
         if (!res.children) return; // the parent itself is gone: its own parent refreshes
         const next = res.children.map((k) => (upsert(iframe, k), k.id));
         prune(
@@ -128,7 +148,12 @@ function refresh(iframe: HTMLIFrameElement, parents: (string | null)[]) {
         syncKept(iframe);
         notify();
       })
-      .catch(() => {}); // keep what we have; the next change tries again
+      .catch((err) => {
+        if (isCancel(err) || getNode(iframe, parent ?? ROOT) !== n) return;
+        n.status = "error"; // shown on the row, with a Retry
+        fail(scope, err, at);
+        notify();
+      });
   }
 }
 
@@ -144,16 +169,21 @@ export function expand(iframe: HTMLIFrameElement, id: string) {
   if (n.status === "loading") return; // one request in flight per node
   n.status = "loading";
   notify();
+  const scope = rowScope(iframe, id);
+  const at = attemptOf(scope);
   queryAgent(iframe, "GET_CHILDREN", { from: id === ROOT ? null : id })
     .then((res) => {
+      if (getNode(iframe, id) !== n) return; // the page was replaced while we waited
       const kids = res.children;
       if (!kids) throw new Error("gone");
       n.children = kids.map((k) => (upsert(iframe, k), k.id)); // replace, never append
       n.status = "idle";
     })
-    .catch(() => {
+    .catch((err) => {
+      if (isCancel(err) || getNode(iframe, id) !== n) return; // not a failure, or nobody is looking
       n.status = "error";
-    }) // only this row fails
+      fail(scope, err, at); // only this row fails
+    })
     .finally(() => {
       notify();
       if (n.dirty) {
@@ -161,6 +191,12 @@ export function expand(iframe: HTMLIFrameElement, id: string) {
         refresh(iframe, [id === ROOT ? null : id]);
       }
     });
+}
+
+// Retry button on a row: a new attempt, so a second failure shows and reports again
+export function retryRow(iframe: HTMLIFrameElement, id: string) {
+  retry(rowScope(iframe, id));
+  expand(iframe, id);
 }
 
 export function collapse(iframe: HTMLIFrameElement, id: string) {
@@ -198,22 +234,18 @@ export interface Hit {
   row: Row;
 }
 
-// Ask every preview; one slow or dead preview just contributes nothing.
+// Ask the previews. A preview that fails rejects: the caller decides what that means.
 export async function search(
   iframes: Map<string, HTMLIFrameElement>,
   q: string,
 ): Promise<{ hits: Hit[]; total: number }> {
   const per = await Promise.all(
     [...iframes].map(async ([screenId, iframe]) => {
-      try {
-        const res = await queryAgent(iframe, "SEARCH", { q });
-        return {
-          total: res.total,
-          hits: res.hits.map((row) => ({ screenId, iframe, row })),
-        };
-      } catch {
-        return { total: 0, hits: [] as Hit[] };
-      }
+      const res = await queryAgent(iframe, "SEARCH", { q });
+      return {
+        total: res.total,
+        hits: res.hits.map((row) => ({ screenId, iframe, row })),
+      };
     }),
   );
   return {

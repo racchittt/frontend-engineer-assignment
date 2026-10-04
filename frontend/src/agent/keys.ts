@@ -1,6 +1,7 @@
 // Keyboard shortcuts: V, I, Esc, and Enter / Shift+Enter / Tab / Shift+Tab to move the
 // selection. Used for keys the host sees itself and keys a preview forwards as KEY.
-import { onAgentMessage, queryAgent } from "./connection";
+import { fail } from "../regions";
+import { onAgentMessage, previewScope, queryAgent } from "./connection";
 import {
   clearSelection,
   getMode,
@@ -20,7 +21,7 @@ function navigate(key: string, shift: boolean): boolean {
     .then((res) => {
       if (res.box) moveSelection(sole.iframe, sole.id, res.box); // no box = dead end: stay put
     })
-    .catch(() => {}); // timeout or preview gone: keep the selection
+    .catch((e) => fail(previewScope(sole.iframe), e)); // the selection stays as it was
   return true;
 }
 

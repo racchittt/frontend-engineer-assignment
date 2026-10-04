@@ -544,6 +544,20 @@ console.log("Agent loading...");
     handlers[event.data.type]?.(event.data);
   }
 
+  // ---- errors inside this page: the host shows them as a badge on the preview ----
+  // (the ones thrown before the host connects wait here)
+  const pageErrors = [];
+  const sendPageError = (message) =>
+    agentPort
+      ? agentPort.postMessage({ type: "PAGE_ERROR", message })
+      : pageErrors.push(message);
+  window.addEventListener("error", (e) =>
+    sendPageError(e.message || String(e.error)),
+  );
+  window.addEventListener("unhandledrejection", (e) =>
+    sendPageError(String(e.reason?.message ?? e.reason)),
+  );
+
   // ---- connection: say hello until the host answers with a port ----
   let connected = false;
   let helloInterval = null;
@@ -588,6 +602,7 @@ console.log("Agent loading...");
         agentPort.onmessage = handlePortMessage;
         agentPort.start();
         console.log(`[${docId}] Got MessagePort, ready to communicate`);
+        pageErrors.splice(0).forEach(sendPageError);
       }
     }
   });

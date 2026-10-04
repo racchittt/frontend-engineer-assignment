@@ -54,6 +54,7 @@ export type Message =
   | { type: "RECT_UPDATE"; boxes: Box[] }
   | { type: "GONE"; ids: string[] } // couldn't re-identify, drop these
   | { type: "CHILDREN_CHANGED"; ids: (string | null)[] } // these parents got new children (null = <body>)
+  | { type: "PAGE_ERROR"; message: string } // the page threw or rejected: shown as a badge
   | { type: "KEY"; key: string; shift: boolean }; // a key typed inside the preview
 
 // ---- requests: host -> agent, answered by a reply with the same request id ----

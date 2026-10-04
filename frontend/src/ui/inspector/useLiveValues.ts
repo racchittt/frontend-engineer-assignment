@@ -1,9 +1,11 @@
-import { useEffect, useReducer, useState } from "react";
-import { queryAgent } from "../../agent/connection";
+import { useEffect, useState } from "react";
+import { queryAgent, screenIdOf } from "../../agent/connection";
 import type { Box, Live } from "../../protocol";
+import { attemptOf, fail, INSPECTOR, type Scope } from "../../regions";
 
 // Live values (read from the page) for the selected elements. Asks again whenever
-// `boxes` is a new array, which is when the selection or its rects changed.
+// `boxes` is a new array, which is when the selection or its rects changed. A failed
+// request fails the inspector region.
 export function useLiveValues(
   boxes: Box[] | undefined,
   iframe: HTMLIFrameElement | undefined,
@@ -11,30 +13,26 @@ export function useLiveValues(
   // `for` ties a reply to the selection it was asked for, so a late one is never shown
   const [live, setLive] = useState<{
     for: unknown;
-    lives: (Live | null)[] | null; // null = the request failed
+    lives: (Live | null)[];
   } | null>(null);
-  const [attempt, retry] = useReducer((x) => x + 1, 0);
 
   useEffect(() => {
     if (!boxes || !iframe) return;
-    let stale = false;
+    let stale = false; // the selection changed (or the inspector went away): not a failure
+    const scope: Scope = { ...INSPECTOR, screenId: screenIdOf(iframe) };
+    const at = attemptOf(scope);
     queryAgent(iframe, "INSPECT", { ids: boxes.map((b) => b.id) })
       .then((res) => {
         if (!stale) setLive({ for: boxes, lives: res.lives });
       })
-      .catch(() => {
-        if (!stale) setLive({ for: boxes, lives: null });
+      .catch((err) => {
+        if (!stale) fail(scope, err, at);
       });
     return () => {
       stale = true;
     };
-  }, [boxes, iframe, attempt]);
+  }, [boxes, iframe]);
 
   const mine = live && live.for === boxes ? live : null; // a reply for an older selection doesn't count
-  return {
-    loading: !mine,
-    failed: !!mine && !mine.lives,
-    lives: mine?.lives ?? null,
-    retry,
-  };
+  return { loading: !mine, lives: mine?.lives ?? null };
 }

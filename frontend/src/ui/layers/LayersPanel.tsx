@@ -12,6 +12,7 @@ import {
   flatten,
   getNode,
   onTreeChange,
+  retryRow,
   ROOT,
   type Hit,
 } from "../../agent/tree";
@@ -21,6 +22,9 @@ import {
   onOverlayChange,
   selectNode,
 } from "../../agent/overlay";
+import { screenIdOf } from "../../agent/connection";
+import { faulty } from "../../dev/faults";
+import { guard, LAYERS } from "../../regions";
 import type { Screen } from "../board/Board";
 import { Close, Layers, Search, Spinner } from "../icons";
 import { ROW_H } from "./constants";
@@ -28,6 +32,9 @@ import LayerRow, { type LayerRowData } from "./LayerRow";
 import SearchResults from "./SearchResults";
 import { useRevealOnSelect } from "./useRevealOnSelect";
 import { useSearch } from "./useSearch";
+
+// Failures while handling a click or key here fail this region
+const selectIn = guard(LAYERS, selectNode);
 
 // The element tree of the active preview: the one last picked in Select mode.
 const LayersPanel = ({
@@ -37,6 +44,8 @@ const LayersPanel = ({
   iframeRefs: RefObject<Map<string, HTMLIFrameElement>>;
   screens: Screen[];
 }) => {
+  if (faulty("layersRender"))
+    throw new Error("Injected render error in the layers panel");
   const [, bump] = useReducer((x) => x + 1, 0);
   const [top, setTop] = useState(0); // scroll position, for the virtual window
   const boxRef = useRef<HTMLDivElement>(null);
@@ -44,15 +53,7 @@ const LayersPanel = ({
   const [query, setQuery] = useState("");
   const pendingScroll = useRef<string | null>(null);
 
-  // snapshot of the iframes, taken once the refs are filled (mount effect)
-  const [iframes, snapshot] = useReducer(
-    () => new Map(iframeRefs.current),
-    new Map<string, HTMLIFrameElement>(),
-  );
-  useEffect(() => {
-    snapshot();
-    return onTreeChange(bump);
-  }, []);
+  useEffect(() => onTreeChange(bump), []);
   // selection or active preview changed: repaint the highlight
   useEffect(() => onOverlayChange(bump), []);
   useRevealOnSelect(iframeRefs, (key) => {
@@ -62,9 +63,7 @@ const LayersPanel = ({
 
   // ---- which preview, which rows ----
   const active = getActiveIframe();
-  const activeId = active
-    ? [...iframes].find(([, i]) => i === active)?.[0]
-    : undefined;
+  const activeId = active ? (screenIdOf(active) ?? undefined) : undefined;
   const root = active ? getNode(active, ROOT) : undefined;
 
   // The top level loads when a preview becomes active, and again after its page
@@ -143,7 +142,7 @@ const LayersPanel = ({
   // ---- search ----
   const results = useSearch(q, active, activeId);
   const pick = (h: Hit) => {
-    selectNode(h.iframe, h.row.id).catch(() => {});
+    selectIn(h.iframe, h.row.id);
     setQuery(""); // back to the tree: selecting reveals the row there
   };
 
@@ -184,7 +183,7 @@ const LayersPanel = ({
         break;
       case "Enter":
       case " ":
-        selectNode(r.iframe, r.id).catch(() => {});
+        selectIn(r.iframe, r.id);
         break;
       default:
         return; // not ours (Tab, V, I, Esc...): let it through
@@ -230,7 +229,7 @@ const LayersPanel = ({
             Couldn't load{" "}
             <button
               className="font-medium underline"
-              onClick={() => expand(active, ROOT)}
+              onClick={() => retryRow(active, ROOT)}
             >
               Retry
             </button>
@@ -241,7 +240,7 @@ const LayersPanel = ({
           role="tree"
           tabIndex={0}
           aria-activedescendant={focusKey ? `layer-${focusKey}` : undefined}
-          onKeyDown={onTreeKey}
+          onKeyDown={(e) => guard(LAYERS, onTreeKey)(e)}
           className="flex-1 overflow-auto outline-none"
           onScroll={(e) => {
             setTop(e.currentTarget.scrollTop);
@@ -259,10 +258,10 @@ const LayersPanel = ({
                 focused={focusKey === keyOf(r)}
                 hovered={hoverRowId === r.id}
                 // row click = select in the preview (the arrow only toggles)
-                onClick={() => {
+                onClick={guard(LAYERS, () => {
                   setFocusKey(keyOf(r));
-                  selectNode(r.iframe, r.id).catch(() => {});
-                }}
+                  selectIn(r.iframe, r.id);
+                })}
               />
             ))}
           </div>

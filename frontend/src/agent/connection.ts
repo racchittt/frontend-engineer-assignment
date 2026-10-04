@@ -2,7 +2,18 @@
 // the MessageChannel per document, requests that wait for a reply, and connect errors.
 // It knows nothing about hover or selection. Others subscribe to what it hears:
 // onAgentMessage, onIframeConnect, onIframeReset.
+import { faulty } from "../dev/faults";
 import type { Message, Requests, Response } from "../protocol";
+import {
+  attemptOf,
+  Cancelled,
+  clearPageError,
+  fail,
+  guard,
+  pageError,
+  retry,
+  type Scope,
+} from "../regions";
 
 interface PendingRequest {
   id: string;
@@ -26,11 +37,20 @@ const iframeTimeouts = new Map<
   HTMLIFrameElement,
   ReturnType<typeof setTimeout>
 >();
-const iframeErrors = new Map<HTMLIFrameElement, string | null>(); // null = no error, string = error message
 const watchedIframes = new Set<HTMLIFrameElement>();
+const screenIds = new Map<HTMLIFrameElement, string>(); // which screen each iframe shows
+
+export const screenIdOf = (iframe: HTMLIFrameElement) =>
+  screenIds.get(iframe) ?? null;
+// the region a preview's failures belong to
+export const previewScope = (iframe: HTMLIFrameElement): Scope => ({
+  kind: "preview",
+  screenId: screenIdOf(iframe),
+});
 
 // ---- subscriptions: a Set of listeners with an unsubscribe function ----
-function listeners<A extends unknown[]>() {
+// A listener that throws fails that preview's region. It doesn't stop the other listeners.
+function listeners<A extends [HTMLIFrameElement, ...unknown[]]>() {
   const set = new Set<(...args: A) => void>();
   return {
     add(listener: (...args: A) => void) {
@@ -39,13 +59,19 @@ function listeners<A extends unknown[]>() {
         set.delete(listener);
       };
     },
-    emit: (...args: A) => set.forEach((l) => l(...args)),
+    emit: (...args: A) =>
+      set.forEach((l) => {
+        try {
+          l(...args);
+        } catch (e) {
+          fail(previewScope(args[0]), e);
+        }
+      }),
   };
 }
 const agentMessageListeners = listeners<[HTMLIFrameElement, Message]>();
 const connectListeners = listeners<[HTMLIFrameElement]>();
 const resetListeners = listeners<[HTMLIFrameElement]>();
-const errorListeners = listeners<[]>();
 
 // Every message a preview sends that is not just the answer to a request
 export const onAgentMessage = agentMessageListeners.add;
@@ -54,8 +80,6 @@ export const onIframeConnect = connectListeners.add;
 // A preview's document was replaced (navigation or Retry): drop what was cached for it.
 // A subscription and not an import, so the files that use this one never import each other.
 export const onIframeReset = resetListeners.add;
-// React subscribes here and gets told only when an error actually changes
-export const onErrorChange = errorListeners.add;
 
 // ---- talking to a preview ----
 export function postToAgent(iframe: HTMLIFrameElement, message: Message) {
@@ -66,12 +90,14 @@ export function broadcast(message: Message) {
   iframeMap.forEach((port) => port.postMessage(message));
 }
 
-// Ask a preview something and wait for the answer (rejects after 3s, on navigation or retry)
+// Ask a preview something and wait for the answer. Rejects after 3s (a failure), or with
+// Cancelled when the page navigates or is retried (not a failure).
 export async function queryAgent<T extends keyof Requests>(
   iframe: HTMLIFrameElement,
   type: T,
   payload: Requests[T]["payload"],
 ): Promise<Requests[T]["reply"]> {
+  if (faulty(`request:${type}`)) throw new Error(`Injected failure: ${type}`);
   const port = iframeMap.get(iframe);
   if (!port) throw new Error("Agent not connected");
 
@@ -99,32 +125,23 @@ export async function queryAgent<T extends keyof Requests>(
 }
 
 // ---- connect errors ----
-export function getIframeError(iframe: HTMLIFrameElement): string | null {
-  return iframeErrors.get(iframe) || null;
-}
-
-function setError(iframe: HTMLIFrameElement, error: string | null) {
-  if ((iframeErrors.get(iframe) ?? null) === error) return;
-  iframeErrors.set(iframe, error);
-  errorListeners.emit();
-}
-
+// The 10s clock starts when the iframe mounts, whether or not the agent ever says hello.
 function armConnectTimeout(iframe: HTMLIFrameElement) {
   clearTimeout(iframeTimeouts.get(iframe));
+  const scope = previewScope(iframe);
+  const at = attemptOf(scope);
   const timeout = setTimeout(() => {
-    if (!iframeMap.has(iframe)) {
-      console.error("Timeout: Couldn't connect to this preview");
-      setError(iframe, "Couldn't connect to this preview");
-    }
+    if (!iframeMap.has(iframe))
+      fail(scope, new Error("Couldn't connect to this preview"), at);
   }, CONNECT_TIMEOUT);
   iframeTimeouts.set(iframe, timeout);
 }
 
-// Called from the iframe's ref callback, so the 10s clock starts when the
-// iframe actually mounts. Doesn't depend on the agent ever saying hello.
-export function watchIframe(iframe: HTMLIFrameElement) {
+// Called from the iframe's ref callback
+export function watchIframe(iframe: HTMLIFrameElement, screenId: string) {
   if (watchedIframes.has(iframe)) return;
   watchedIframes.add(iframe);
+  screenIds.set(iframe, screenId);
   armConnectTimeout(iframe);
 }
 
@@ -142,9 +159,10 @@ export function initAgent() {
 // Drop the port and fail everything still waiting on it
 function teardown(iframe: HTMLIFrameElement, reason: string) {
   resetListeners.emit(iframe);
+  clearPageError(screenIdOf(iframe));
   pendingRequestsPerIframe.get(iframe)?.forEach((req) => {
     clearTimeout(req.timeout);
-    req.reject(new Error(reason));
+    req.reject(new Cancelled(reason)); // the user moved on: not a failure
   });
   pendingRequestsPerIframe.delete(iframe);
   iframeMap.get(iframe)?.close();
@@ -155,7 +173,7 @@ function teardown(iframe: HTMLIFrameElement, reason: string) {
 // Retry just this preview, not the whole host
 export function retryIframe(iframe: HTMLIFrameElement) {
   teardown(iframe, "Retry");
-  setError(iframe, null);
+  retry(previewScope(iframe)); // a new attempt: the old error goes, a new failure reports again
   armConnectTimeout(iframe);
   iframe.setAttribute("src", iframe.getAttribute("src") ?? ""); // re-setting src reloads only this iframe
 }
@@ -201,8 +219,9 @@ function handleHandshake(event: MessageEvent<Message>) {
     );
 
     // Listen on our port
-    channel.port1.onmessage = (portEvent) =>
-      handleAgentMessage(sourceIframe, portEvent);
+    channel.port1.onmessage = guard(previewScope(sourceIframe), (portEvent) =>
+      handleAgentMessage(sourceIframe, portEvent),
+    );
     channel.port1.start();
 
     // Test: send ping with ID
@@ -212,7 +231,7 @@ function handleHandshake(event: MessageEvent<Message>) {
     // Handshake succeeded: clear the timeout and any error (also covers a late connect)
     clearTimeout(iframeTimeouts.get(sourceIframe));
     iframeTimeouts.delete(sourceIframe);
-    setError(sourceIframe, null);
+    retry(previewScope(sourceIframe));
   }
 }
 
@@ -233,9 +252,28 @@ function handleAgentMessage(
     }
   }
 
+  if (event.data.type === "PAGE_ERROR")
+    pageError(screenIdOf(iframe), String(event.data.message));
+
   if (event.data.type === "PONG") {
     console.log("✓ Ping-pong successful");
   }
 
   agentMessageListeners.emit(iframe, event.data as unknown as Message);
+}
+
+// ---- dev only: a preview that never connects, for the fault menu ----
+const DEAD_URL = `${PAGES_ORIGIN}/__dead__`;
+export function breakPreview(iframe: HTMLIFrameElement) {
+  iframe.dataset.good ??= iframe.getAttribute("src") ?? "";
+  iframe.setAttribute("src", DEAD_URL);
+  retryIframe(iframe);
+}
+export function mendPreviews() {
+  document.querySelectorAll("iframe").forEach((iframe) => {
+    if (!iframe.dataset.good) return;
+    iframe.setAttribute("src", iframe.dataset.good);
+    delete iframe.dataset.good;
+    retryIframe(iframe);
+  });
 }

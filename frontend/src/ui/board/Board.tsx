@@ -1,14 +1,10 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
-import {
-  getIframeError,
-  onErrorChange,
-  retryIframe,
-  watchIframe,
-} from "../../agent/connection";
+import { retryIframe, watchIframe } from "../../agent/connection";
 import { panBy, zoomAt, type Camera } from "../../camera";
-import { Alert } from "../icons";
+import { RegionBoundary } from "../RegionBoundary";
 import { useActiveIframe } from "../useActiveIframe";
 import OutlineLayer from "./OutlineLayer";
+import PageErrorBadge from "./PageErrorBadge";
 import ZoomControl from "./ZoomControl";
 
 export interface Screen {
@@ -31,23 +27,7 @@ export default function Board({
   const boardRef = useRef<HTMLDivElement>(null);
   const [camera, setCamera] = useState<Camera>({ x: 0, y: 0, z: 1 });
   const [isPanning, setIsPanning] = useState(false);
-  const [previewErrors, setPreviewErrors] = useState<
-    Map<string, string | null>
-  >(new Map());
   const active = useActiveIframe();
-
-  // The connection tells us when an error changes, no polling
-  useEffect(
-    () =>
-      onErrorChange(() => {
-        const next = new Map<string, string | null>();
-        iframeRefs.current.forEach((iframe, screenId) =>
-          next.set(screenId, getIframeError(iframe)),
-        );
-        setPreviewErrors(next);
-      }),
-    [iframeRefs],
-  );
 
   useEffect(() => {
     const element = boardRef.current;
@@ -110,7 +90,6 @@ export default function Board({
         >
           <div className="grid grid-cols-4 gap-x-8 gap-y-10">
             {screens.map((screen) => {
-              const error = previewErrors.get(screen.id);
               const isActive =
                 !!active && iframeRefs.current.get(screen.id) === active;
 
@@ -132,43 +111,32 @@ export default function Board({
                     {screen.name}
                   </h3>
                   <div className="relative">
-                    <iframe
-                      ref={(el) => {
-                        if (el) {
-                          iframeRefs.current.set(screen.id, el);
-                          watchIframe(el);
-                        }
+                    {/* each preview is its own region: its error sits on top of it */}
+                    <RegionBoundary
+                      scope={{ kind: "preview", screenId: screen.id }}
+                      cover
+                      onRetry={() => {
+                        const el = iframeRefs.current.get(screen.id);
+                        if (el) retryIframe(el);
                       }}
-                      src={screen.url}
-                      title={screen.name}
-                      width="1280"
-                      height="800"
-                      className={`block rounded-md bg-white shadow-lg ring-1 ring-slate-900/10 ${
-                        isPanning ? "pointer-events-none" : ""
-                      }`}
-                    />
-                    {error && (
-                      <div className="absolute inset-0 flex items-center justify-center rounded-md bg-slate-900/60 backdrop-blur-[2px]">
-                        <div className="flex max-w-xs flex-col items-center gap-3 rounded-xl bg-white px-6 py-5 text-center shadow-xl">
-                          <span className="flex size-9 items-center justify-center rounded-full bg-red-50 text-red-600">
-                            <Alert className="size-5" />
-                          </span>
-                          <p className="text-sm font-medium text-slate-800">
-                            {error}
-                          </p>
-                          <button
-                            onClick={() => {
-                              const el = iframeRefs.current.get(screen.id);
-                              if (el) retryIframe(el);
-                            }}
-                            onPointerDown={(e) => e.stopPropagation()}
-                            className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700"
-                          >
-                            Retry
-                          </button>
-                        </div>
-                      </div>
-                    )}
+                    >
+                      <iframe
+                        ref={(el) => {
+                          if (el) {
+                            iframeRefs.current.set(screen.id, el);
+                            watchIframe(el, screen.id);
+                          }
+                        }}
+                        src={screen.url}
+                        title={screen.name}
+                        width="1280"
+                        height="800"
+                        className={`block rounded-md bg-white shadow-lg ring-1 ring-slate-900/10 ${
+                          isPanning ? "pointer-events-none" : ""
+                        }`}
+                      />
+                    </RegionBoundary>
+                    <PageErrorBadge screenId={screen.id} />
                   </div>
                 </div>
               );

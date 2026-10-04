@@ -1,4 +1,4 @@
-import { collapse, expand, type Flat } from "../../agent/tree";
+import { collapse, expand, retryRow, type Flat } from "../../agent/tree";
 import { getOverlay, hoverNode } from "../../agent/overlay";
 import { ChevronRight, Spinner } from "../icons";
 import { ROW_H } from "./constants";
@@ -101,7 +101,7 @@ export default function LayerRow({
             className="font-medium underline"
             onClick={(e) => {
               e.stopPropagation();
-              expand(r.iframe, r.id);
+              retryRow(r.iframe, r.id);
             }}
           >
             Retry

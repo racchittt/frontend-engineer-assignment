@@ -1,4 +1,6 @@
 import { useEffect, useReducer, type ReactNode } from "react";
+import { screenIdOf } from "../../agent/connection";
+import { faulty } from "../../dev/faults";
 import type { Live } from "../../protocol";
 import {
   getSelection,
@@ -106,12 +108,14 @@ function Empty({
 
 // What is selected: its live values, and (for one element) what the API says about it.
 const Inspector = () => {
+  if (faulty("inspectorRender"))
+    throw new Error("Injected render error in the inspector");
   const [, bump] = useReducer((x) => x + 1, 0);
   useEffect(() => onOverlayChange(bump), []);
 
   const sel = getSelection();
   const boxes = sel?.boxes;
-  const { loading, failed, lives, retry } = useLiveValues(boxes, sel?.iframe);
+  const { loading, lives } = useLiveValues(boxes, sel?.iframe);
 
   let body: ReactNode;
   if (!boxes) {
@@ -128,19 +132,10 @@ const Inspector = () => {
         hint="Select an element to inspect it."
       />
     );
-  } else if (loading) {
+  } else if (loading || !lives) {
     body = (
       <div className="px-4 py-3">
         <Skeleton />
-      </div>
-    );
-  } else if (failed || !lives) {
-    body = (
-      <div className="px-4 py-3 text-xs">
-        <span className="text-red-600">Couldn't read this element </span>
-        <button className="font-medium underline" onClick={retry}>
-          Retry
-        </button>
       </div>
     );
   } else {
@@ -192,7 +187,10 @@ const Inspector = () => {
         })}
         {one && (
           <Section title="Details">
-            <DetailsSection elementKey={found[0].key} />
+            <DetailsSection
+              elementKey={found[0].key}
+              screenId={screenIdOf(sel!.iframe)}
+            />
           </Section>
         )}
       </div>
