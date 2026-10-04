@@ -49,8 +49,10 @@ export const previewScope = (iframe: HTMLIFrameElement): Scope => ({
 });
 
 // ---- subscriptions: a Set of listeners with an unsubscribe function ----
-// A listener that throws fails that preview's region. It doesn't stop the other listeners.
-function listeners<A extends [HTMLIFrameElement, ...unknown[]]>() {
+// With `onError`, a listener that throws is reported there and doesn't stop the others.
+function listeners<A extends unknown[]>(
+  onError?: (error: unknown, ...args: A) => void,
+) {
   const set = new Set<(...args: A) => void>();
   return {
     add(listener: (...args: A) => void) {
@@ -61,15 +63,19 @@ function listeners<A extends [HTMLIFrameElement, ...unknown[]]>() {
     },
     emit: (...args: A) =>
       set.forEach((l) => {
+        if (!onError) return l(...args);
         try {
           l(...args);
         } catch (e) {
-          fail(previewScope(args[0]), e);
+          onError(e, ...args);
         }
       }),
   };
 }
-const agentMessageListeners = listeners<[HTMLIFrameElement, Message]>();
+// what a preview sends can make a listener throw: that fails the preview's region
+const agentMessageListeners = listeners<[HTMLIFrameElement, Message]>(
+  (e, iframe) => fail(previewScope(iframe), e),
+);
 const connectListeners = listeners<[HTMLIFrameElement]>();
 const resetListeners = listeners<[HTMLIFrameElement]>();
 
@@ -260,20 +266,4 @@ function handleAgentMessage(
   }
 
   agentMessageListeners.emit(iframe, event.data as unknown as Message);
-}
-
-// ---- dev only: a preview that never connects, for the fault menu ----
-const DEAD_URL = `${PAGES_ORIGIN}/__dead__`;
-export function breakPreview(iframe: HTMLIFrameElement) {
-  iframe.dataset.good ??= iframe.getAttribute("src") ?? "";
-  iframe.setAttribute("src", DEAD_URL);
-  retryIframe(iframe);
-}
-export function mendPreviews() {
-  document.querySelectorAll("iframe").forEach((iframe) => {
-    if (!iframe.dataset.good) return;
-    iframe.setAttribute("src", iframe.dataset.good);
-    delete iframe.dataset.good;
-    retryIframe(iframe);
-  });
 }

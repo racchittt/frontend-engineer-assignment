@@ -25,7 +25,6 @@ import {
 import { screenIdOf } from "../../agent/connection";
 import { faulty } from "../../dev/faults";
 import { guard, LAYERS } from "../../regions";
-import type { Screen } from "../board/Board";
 import { Close, Layers, Search, Spinner } from "../icons";
 import { ROW_H } from "./constants";
 import LayerRow, { type LayerRowData } from "./LayerRow";
@@ -39,10 +38,8 @@ const selectIn = guard(LAYERS, selectNode);
 // The element tree of the active preview: the one last picked in Select mode.
 const LayersPanel = ({
   iframeRefs,
-  screens,
 }: {
   iframeRefs: RefObject<Map<string, HTMLIFrameElement>>;
-  screens: Screen[];
 }) => {
   if (faulty("layersRender"))
     throw new Error("Injected render error in the layers panel");
@@ -270,7 +267,7 @@ const LayersPanel = ({
     );
   }
 
-  const activeName = screens.find((s) => s.id === activeId)?.name;
+  const activeName = active?.title; // the board titles each iframe with its screen name
 
   return (
     <aside className="flex h-full w-72 shrink-0 flex-col border-r border-slate-200 bg-white">

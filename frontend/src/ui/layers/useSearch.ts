@@ -21,7 +21,7 @@ export function useSearch(
     if (!query || !active || !activeId) return;
     const t = setTimeout(() => {
       guard(LAYERS, () =>
-        search(new Map([[activeId, active]]), query).then(
+        search(active, query).then(
           (r) => {
             if (mine === seq.current) setFound({ q: query, ...r });
           },

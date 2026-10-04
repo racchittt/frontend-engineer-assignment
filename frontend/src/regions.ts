@@ -100,7 +100,7 @@ export function dropRows(screenId: string | null) {
 
 export function useRegion(scope: Scope) {
   const { attempt, error } = useSyncExternalStore(subscribe, () => read(scope));
-  return { attempt, error, retry: () => retry(scope) };
+  return { attempt, error };
 }
 
 // Wrap a handler, a timer, a message listener or a promise continuation: if it throws

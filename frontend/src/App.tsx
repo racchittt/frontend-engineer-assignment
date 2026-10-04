@@ -38,7 +38,7 @@ function App() {
   useShortcuts();
 
   useEffect(() => {
-    let stale = false; 
+    let stale = false;
     loadScreens()
       .then((screens) => {
         if (!stale) setLoaded({ attempt, screens });
@@ -79,7 +79,7 @@ function App() {
           scope={LAYERS}
           className="h-full w-72 shrink-0 border-r border-slate-200 bg-white"
         >
-          <LayersPanel iframeRefs={iframeRefs} screens={screens} />
+          <LayersPanel iframeRefs={iframeRefs} />
         </RegionBoundary>
         <RegionBoundary scope={BOARD} className="min-w-0 flex-1 bg-slate-50">
           {loading ? (

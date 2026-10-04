@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { faulty } from "../../dev/faults";
-import { clear, fail, useRegion, type Scope } from "../../regions";
+import { clear, fail, retry, useRegion, type Scope } from "../../regions";
 import { Skeleton, StatusBadge } from "./parts";
 
 interface Details {
@@ -42,7 +42,7 @@ export default function DetailsSection({
   elementKey: string | null;
   screenId: string | null;
 }) {
-  const { attempt, error, retry } = useRegion({ kind: "details" });
+  const { attempt, error } = useRegion({ kind: "details" });
   const [got, setGot] = useState<Loaded | null>(null);
 
   useEffect(() => {
@@ -66,7 +66,10 @@ export default function DetailsSection({
     return (
       <p className="text-xs">
         <span className="text-red-600">Couldn't load details </span>
-        <button className="font-medium underline" onClick={retry}>
+        <button
+          className="font-medium underline"
+          onClick={() => retry({ kind: "details" })}
+        >
           Retry
         </button>
       </p>

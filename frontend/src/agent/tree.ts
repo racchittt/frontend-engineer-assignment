@@ -134,9 +134,10 @@ function refresh(iframe: HTMLIFrameElement, parents: (string | null)[]) {
     }
     const scope = rowScope(iframe, parent ?? ROOT);
     const at = attemptOf(scope);
+    const gone = () => getNode(iframe, parent ?? ROOT) !== n; // the page was replaced
     queryAgent(iframe, "GET_CHILDREN", { from: parent })
       .then((res) => {
-        if (getNode(iframe, parent ?? ROOT) !== n) return; // the page was replaced meanwhile
+        if (gone()) return;
         if (!res.children) return; // the parent itself is gone: its own parent refreshes
         const next = res.children.map((k) => (upsert(iframe, k), k.id));
         prune(
@@ -149,7 +150,7 @@ function refresh(iframe: HTMLIFrameElement, parents: (string | null)[]) {
         notify();
       })
       .catch((err) => {
-        if (isCancel(err) || getNode(iframe, parent ?? ROOT) !== n) return;
+        if (isCancel(err) || gone()) return;
         n.status = "error"; // shown on the row, with a Retry
         fail(scope, err, at);
         notify();
@@ -171,16 +172,17 @@ export function expand(iframe: HTMLIFrameElement, id: string) {
   notify();
   const scope = rowScope(iframe, id);
   const at = attemptOf(scope);
+  const gone = () => getNode(iframe, id) !== n; // the page was replaced
   queryAgent(iframe, "GET_CHILDREN", { from: id === ROOT ? null : id })
     .then((res) => {
-      if (getNode(iframe, id) !== n) return; // the page was replaced while we waited
+      if (gone()) return;
       const kids = res.children;
       if (!kids) throw new Error("gone");
       n.children = kids.map((k) => (upsert(iframe, k), k.id)); // replace, never append
       n.status = "idle";
     })
     .catch((err) => {
-      if (isCancel(err) || getNode(iframe, id) !== n) return; // not a failure, or nobody is looking
+      if (isCancel(err) || gone()) return; // not a failure, or nobody is looking
       n.status = "error";
       fail(scope, err, at); // only this row fails
     })
@@ -229,27 +231,15 @@ export async function reveal(iframe: HTMLIFrameElement, id: string) {
 }
 
 export interface Hit {
-  screenId: string;
   iframe: HTMLIFrameElement;
   row: Row;
 }
 
-// Ask the previews. A preview that fails rejects: the caller decides what that means.
-export async function search(
-  iframes: Map<string, HTMLIFrameElement>,
-  q: string,
-): Promise<{ hits: Hit[]; total: number }> {
-  const per = await Promise.all(
-    [...iframes].map(async ([screenId, iframe]) => {
-      const res = await queryAgent(iframe, "SEARCH", { q });
-      return {
-        total: res.total,
-        hits: res.hits.map((row) => ({ screenId, iframe, row })),
-      };
-    }),
-  );
+// Ask the preview. A failure rejects: the caller decides what that means.
+export async function search(iframe: HTMLIFrameElement, q: string) {
+  const res = await queryAgent(iframe, "SEARCH", { q });
   return {
-    hits: per.flatMap((p) => p.hits),
-    total: per.reduce((n, p) => n + p.total, 0),
+    total: res.total,
+    hits: res.hits.map((row): Hit => ({ iframe, row })),
   };
 }

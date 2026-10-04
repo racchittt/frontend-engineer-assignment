@@ -28,7 +28,7 @@ export default function SearchResults({
       </p>
       {results.hits.map((h) => (
         <button
-          key={`${h.screenId}:${h.row.id}`}
+          key={h.row.id}
           className="block w-full truncate px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-purple-50 hover:text-slate-900"
           onClick={() => onPick(h)}
         >

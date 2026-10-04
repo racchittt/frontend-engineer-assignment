@@ -1,14 +1,10 @@
 // Dev only: trigger each failure on demand, for the video. Not in a production build.
 import { useState, type RefObject } from "react";
-import {
-  breakPreview,
-  mendPreviews,
-  onAgentMessage,
-  screenIdOf,
-} from "../agent/connection";
+import { onAgentMessage, screenIdOf } from "../agent/connection";
 import { getActiveIframe } from "../agent/overlay";
 import { guard, retry, type Kind, type Scope } from "../regions";
 import { clearFaults, setFault } from "./faults";
+import { breakPreview, mendPreviews } from "./previews";
 
 const boom = () => {
   throw new Error("Injected error");
