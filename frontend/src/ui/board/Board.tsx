@@ -6,6 +6,8 @@ import {
   watchIframe,
 } from "../../agent/connection";
 import { panBy, zoomAt, type Camera } from "../../camera";
+import { Alert } from "../icons";
+import { useActiveIframe } from "../useActiveIframe";
 import OutlineLayer from "./OutlineLayer";
 
 export interface Screen {
@@ -13,6 +15,8 @@ export interface Screen {
   name: string;
   url: string;
 }
+
+const GRID = 24; // px between the dots of the canvas, at 100%
 
 // The pannable, zoomable board of previews, with the outlines drawn over it.
 export default function Board({
@@ -28,6 +32,7 @@ export default function Board({
   const [previewErrors, setPreviewErrors] = useState<
     Map<string, string | null>
   >(new Map());
+  const active = useActiveIframe();
 
   // The connection tells us when an error changes, no polling
   useEffect(
@@ -69,11 +74,18 @@ export default function Board({
   const endDrag = () => setIsPanning(false);
 
   return (
-    <div className="relative flex-1 min-w-0">
+    <div className="relative min-w-0 flex-1">
       <div
         ref={boardRef}
-        className="overflow-hidden h-screen touch-none"
-        style={{ cursor: isPanning ? "grabbing" : "grab" }}
+        className="h-full touch-none overflow-hidden"
+        style={{
+          cursor: isPanning ? "grabbing" : "grab",
+          // a dot grid that pans and zooms with the board
+          backgroundImage:
+            "radial-gradient(circle, var(--color-slate-300) 1px, transparent 1px)",
+          backgroundSize: `${GRID * camera.z}px ${GRID * camera.z}px`,
+          backgroundPosition: `${camera.x}px ${camera.y}px`,
+        }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={endDrag}
@@ -84,15 +96,31 @@ export default function Board({
             transform: `translate(${camera.x}px,${camera.y}px) scale(${camera.z})`,
             transformOrigin: "0 0",
           }}
-          className="w-max"
+          className="w-max p-8"
         >
-          <div className="grid grid-cols-4 gap-6">
+          <div className="grid grid-cols-4 gap-x-8 gap-y-10">
             {screens.map((screen) => {
               const error = previewErrors.get(screen.id);
+              const isActive =
+                !!active && iframeRefs.current.get(screen.id) === active;
 
               return (
                 <div key={screen.id} className="flex flex-col">
-                  <h3 className="text-lg font-semibold mb-2">{screen.name}</h3>
+                  <h3
+                    className={`mb-2 flex items-center gap-1.5 text-sm ${
+                      isActive
+                        ? "font-semibold text-slate-900"
+                        : "font-medium text-slate-500"
+                    }`}
+                  >
+                    {isActive && (
+                      <span
+                        title="Active preview"
+                        className="size-1.5 rounded-full bg-purple-500"
+                      />
+                    )}
+                    {screen.name}
+                  </h3>
                   <div className="relative">
                     <iframe
                       ref={(el) => {
@@ -102,14 +130,20 @@ export default function Board({
                         }
                       }}
                       src={screen.url}
+                      title={screen.name}
                       width="1280"
                       height="800"
-                      className={`border border-gray-300 rounded ${isPanning ? "pointer-events-none" : ""}`}
+                      className={`block rounded-md bg-white shadow-lg ring-1 ring-slate-900/10 ${
+                        isPanning ? "pointer-events-none" : ""
+                      }`}
                     />
                     {error && (
-                      <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center rounded">
-                        <div className="bg-white p-6 rounded-lg text-center">
-                          <p className="text-red-600 font-semibold mb-4">
+                      <div className="absolute inset-0 flex items-center justify-center rounded-md bg-slate-900/60 backdrop-blur-[2px]">
+                        <div className="flex max-w-xs flex-col items-center gap-3 rounded-xl bg-white px-6 py-5 text-center shadow-xl">
+                          <span className="flex size-9 items-center justify-center rounded-full bg-red-50 text-red-600">
+                            <Alert className="size-5" />
+                          </span>
+                          <p className="text-sm font-medium text-slate-800">
                             {error}
                           </p>
                           <button
@@ -118,7 +152,7 @@ export default function Board({
                               if (el) retryIframe(el);
                             }}
                             onPointerDown={(e) => e.stopPropagation()}
-                            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+                            className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700"
                           >
                             Retry
                           </button>
@@ -133,6 +167,9 @@ export default function Board({
         </div>
       </div>
       <OutlineLayer iframeRefs={iframeRefs} camera={camera} />
+      <div className="pointer-events-none absolute bottom-3 left-3 rounded-md bg-white/90 px-2 py-1 font-mono text-[11px] text-slate-500 shadow-sm ring-1 ring-slate-900/5">
+        {Math.round(camera.z * 100)}%
+      </div>
     </div>
   );
 }

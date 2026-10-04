@@ -20,6 +20,8 @@ import {
   onOverlayChange,
   selectNode,
 } from "../../agent/overlay";
+import type { Screen } from "../board/Board";
+import { Close, Layers, Search, Spinner } from "../icons";
 import { ROW_H } from "./constants";
 import LayerRow, { type LayerRowData } from "./LayerRow";
 import SearchResults from "./SearchResults";
@@ -29,8 +31,10 @@ import { useSearch } from "./useSearch";
 // The element tree of the active preview: the one last picked in Select mode.
 const LayersPanel = ({
   iframeRefs,
+  screens,
 }: {
   iframeRefs: RefObject<Map<string, HTMLIFrameElement>>;
+  screens: Screen[];
 }) => {
   const [, bump] = useReducer((x) => x + 1, 0);
   const [top, setTop] = useState(0); // scroll position, for the virtual window
@@ -163,19 +167,37 @@ const LayersPanel = ({
 
   let body;
   if (!active) {
-    body = <div className="px-2 text-sm">Click something in a preview</div>;
+    body = (
+      <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
+        <span className="flex size-9 items-center justify-center rounded-full bg-slate-100 text-slate-400">
+          <Layers className="size-4.5" />
+        </span>
+        <p className="text-xs font-medium text-slate-700">
+          Click something in a preview
+        </p>
+        <p className="text-[11px] text-slate-400">
+          Its element tree shows up here.
+        </p>
+      </div>
+    );
   } else if (q) {
     body = <SearchResults results={results} onPick={pick} />;
   } else {
     body = (
       <>
         {root?.status === "loading" && !rows.length && (
-          <div className="px-2 text-sm">Loading…</div>
+          <div className="flex items-center gap-2 px-3 py-2 text-xs text-slate-500">
+            <Spinner className="size-3.5" />
+            Loading…
+          </div>
         )}
         {root?.status === "error" && (
-          <div className="px-2 text-sm">
+          <div className="px-3 py-2 text-xs text-red-600">
             Couldn't load{" "}
-            <button className="underline" onClick={() => expand(active, ROOT)}>
+            <button
+              className="font-medium underline"
+              onClick={() => expand(active, ROOT)}
+            >
               Retry
             </button>
           </div>
@@ -214,20 +236,51 @@ const LayersPanel = ({
     );
   }
 
+  const activeName = screens.find((s) => s.id === activeId)?.name;
+
   return (
-    <div className="w-72 shrink-0 h-screen flex flex-col">
-      <input
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") setQuery("");
-          if (e.key === "Enter" && results?.hits[0]) pick(results.hits[0]);
-        }}
-        placeholder="Search layers"
-        className="w-full border px-2 py-1 mb-1 text-sm"
-      />
+    <aside className="flex h-full w-72 shrink-0 flex-col border-r border-slate-200 bg-white">
+      <div className="space-y-2.5 border-b border-slate-100 px-3 pb-3 pt-3">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-xs font-semibold tracking-wide text-slate-900">
+            Layers
+          </h2>
+          {activeName && (
+            <span
+              title="Active preview"
+              className="flex max-w-40 items-center gap-1.5 truncate rounded-full bg-purple-50 px-2 py-0.5 text-[11px] font-medium text-purple-700"
+            >
+              <span className="size-1.5 shrink-0 rounded-full bg-purple-500" />
+              <span className="truncate">{activeName}</span>
+            </span>
+          )}
+        </div>
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setQuery("");
+              if (e.key === "Enter" && results?.hits[0]) pick(results.hits[0]);
+            }}
+            placeholder="Search layers"
+            aria-label="Search layers"
+            className="w-full rounded-md border border-slate-200 bg-slate-50 py-1.5 pl-8 pr-7 text-xs text-slate-800 outline-none focus-visible:outline-none placeholder:text-slate-400 focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-100"
+          />
+          {query && (
+            <button
+              onClick={() => setQuery("")}
+              aria-label="Clear search"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-600"
+            >
+              <Close className="size-3" />
+            </button>
+          )}
+        </div>
+      </div>
       {body}
-    </div>
+    </aside>
   );
 };
 

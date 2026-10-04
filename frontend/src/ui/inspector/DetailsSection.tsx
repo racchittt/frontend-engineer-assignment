@@ -1,4 +1,5 @@
 import { useEffect, useReducer, useState } from "react";
+import { Skeleton, StatusBadge } from "./parts";
 
 interface Details {
   component: string;
@@ -49,32 +50,36 @@ export default function DetailsSection({
     return () => ac.abort();
   }, [elementKey, attempt]);
 
-  if (!elementKey) return <p className="text-gray-500">No details</p>;
+  if (!elementKey) return <p className="text-xs text-slate-400">No details</p>;
   // `got` may belong to an earlier selection: only trust it for this key
   const mine = got?.key === elementKey ? got : null;
-  if (!mine) return <p className="text-gray-500">Loading…</p>;
+  if (!mine) return <Skeleton />;
   if (mine.state === "none")
-    return <p className="text-gray-500">No details for this element</p>;
+    return (
+      <p className="text-xs text-slate-400">No details for this element</p>
+    );
   if (mine.state === "error")
     return (
-      <p>
+      <p className="text-xs">
         <span className="text-red-600">Couldn't load details </span>
-        <button className="underline" onClick={retry}>
+        <button className="font-medium underline" onClick={retry}>
           Retry
         </button>
       </p>
     );
   const d = mine.data;
   return (
-    <dl className="grid grid-cols-[80px_1fr] gap-x-2">
-      <dt className="text-gray-500">Component</dt>
-      <dd>{d.component}</dd>
-      <dt className="text-gray-500">Description</dt>
-      <dd>{d.description}</dd>
-      <dt className="text-gray-500">Status</dt>
-      <dd>{d.status}</dd>
-      <dt className="text-gray-500">Owner</dt>
-      <dd>{d.owner}</dd>
-    </dl>
+    <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-sm font-semibold">{d.component}</p>
+        <StatusBadge status={d.status} />
+      </div>
+      <p className="mt-1.5 text-xs leading-relaxed text-slate-600">
+        {d.description}
+      </p>
+      <p className="mt-2 text-[11px] text-slate-500">
+        Owner <span className="font-medium text-slate-700">{d.owner}</span>
+      </p>
+    </div>
   );
 }

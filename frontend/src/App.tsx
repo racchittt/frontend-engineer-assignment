@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { initAgent } from "./agent/connection";
 import Board, { type Screen } from "./ui/board/Board";
+import { Spinner } from "./ui/icons";
 import Inspector from "./ui/inspector/Inspector";
 import LayersPanel from "./ui/layers/LayersPanel";
 import Toolbar from "./ui/Toolbar";
@@ -36,19 +37,27 @@ function App() {
 
   if (loading)
     return (
-      <div className="flex items-center justify-center h-screen">
-        Loading...
+      <div className="flex h-full items-center justify-center gap-2 text-sm text-slate-500">
+        <Spinner className="size-4" />
+        Loading screens…
       </div>
     );
 
   return (
-    <div className="w-full bg-[#fdfcfa] min-h-screen p-8">
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-4xl font-bold mb-8">Design Tool Viewer</h1>
+    <div className="flex h-full flex-col">
+      <header className="flex h-12 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4">
+        <div className="flex items-center gap-2.5">
+          <h1 className="text-sm font-semibold tracking-tight">
+            Design Tool Viewer
+          </h1>
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">
+            {screens.length} screens
+          </span>
+        </div>
         <Toolbar />
-      </div>
-      <div className="flex">
-        <LayersPanel iframeRefs={iframeRefs} />
+      </header>
+      <div className="flex min-h-0 flex-1">
+        <LayersPanel iframeRefs={iframeRefs} screens={screens} />
         <Board screens={screens} iframeRefs={iframeRefs} />
         <Inspector />
       </div>
