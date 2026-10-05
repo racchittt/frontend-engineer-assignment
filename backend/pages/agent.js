@@ -565,17 +565,32 @@ console.log("Agent loading...");
       const q = String(query ?? "")
         .trim()
         .toLowerCase();
-      const LIMIT = 50;
-      const hits = [];
+      const LIMIT = 100; // matches sent, the rest are only counted
+      const all = [...document.body.querySelectorAll("*")];
+      const matched = new Set();
+      const shown = new Set(); // the matches and their ancestors
       let total = 0;
       if (q) {
-        for (const el of document.body.querySelectorAll("*")) {
+        for (const el of all) {
           if (!labelOf(el).toLowerCase().includes(q)) continue;
-          if (hits.length < LIMIT) hits.push(rowOf(el));
           total++;
+          if (matched.size >= LIMIT) continue;
+          matched.add(el);
+          for (let n = el; n && n !== document.body; n = n.parentElement)
+            shown.add(n);
         }
       }
-      agentPort.postMessage({ id, type: "SEARCHED", hits, total });
+      const depthOf = (el) => {
+        let d = 0;
+        for (let n = el.parentElement; n && n !== document.body; n = n.parentElement)
+          d++;
+        return d;
+      };
+      // page order, so the host can show the matches as a tree
+      const rows = all
+        .filter((el) => shown.has(el))
+        .map((el) => ({ ...rowOf(el), depth: depthOf(el), match: matched.has(el) }));
+      agentPort.postMessage({ id, type: "SEARCHED", rows, total });
     },
 
     // Inspector: live values for the selected elements (null = that one is gone)

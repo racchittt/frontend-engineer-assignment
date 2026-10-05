@@ -18,6 +18,12 @@ export interface Row {
   hasChildren: boolean;
 }
 
+// A search result: a match, or an ancestor shown so the match has its place in the tree
+export interface SearchRow extends Row {
+  depth: number; // 0 = a child of <body>
+  match: boolean;
+}
+
 // What the inspector's Live section shows. All strings, so several elements can be compared.
 export interface Live {
   name: string;
@@ -76,7 +82,7 @@ export interface Requests {
   };
   SEARCH: {
     payload: { q: string };
-    reply: { hits: Row[]; total: number };
+    reply: { rows: SearchRow[]; total: number };
   };
   INSPECT: {
     payload: { ids: string[] };

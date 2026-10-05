@@ -2,10 +2,15 @@
   "name": "figr-frontend-assignment",
   "private": true,
   "description": "Starter kit for the Figr frontend engineer assignment",
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "backend": "node backend/server.js",
     "dev": "concurrently \"npm run backend\" \"npm run frontend\"",
     "frontend": "cd frontend && npm run dev"
+  },
+  "dependencies": {
+    "concurrently": "^10.0.5"
   }
 }

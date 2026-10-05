@@ -229,17 +229,3 @@ export async function reveal(iframe: HTMLIFrameElement, id: string) {
   notify();
   return true;
 }
-
-export interface Hit {
-  iframe: HTMLIFrameElement;
-  row: Row;
-}
-
-// Ask the preview. A failure rejects: the caller decides what that means.
-export async function search(iframe: HTMLIFrameElement, q: string) {
-  const res = await queryAgent(iframe, "SEARCH", { q });
-  return {
-    total: res.total,
-    hits: res.hits.map((row): Hit => ({ iframe, row })),
-  };
-}

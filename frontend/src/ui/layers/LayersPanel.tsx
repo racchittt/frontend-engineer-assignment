@@ -14,7 +14,6 @@ import {
   onTreeChange,
   retryRow,
   ROOT,
-  type Hit,
 } from "../../agent/tree";
 import {
   getActiveIframe,
@@ -53,10 +52,15 @@ const LayersPanel = ({
   useEffect(() => onTreeChange(bump), []);
   // selection or active preview changed: repaint the highlight
   useEffect(() => onOverlayChange(bump), []);
-  useRevealOnSelect(iframeRefs, (key) => {
-    pendingScroll.current = key; // the effect below scrolls to it once rendered
-    bump();
-  });
+  // while searching, the tree is left alone: clearing the search restores what was open
+  useRevealOnSelect(
+    iframeRefs,
+    (key) => {
+      pendingScroll.current = key; // the effect below scrolls to it once rendered
+      bump();
+    },
+    query.trim() !== "",
+  );
 
   // ---- which preview, which rows ----
   const active = getActiveIframe();
@@ -137,10 +141,10 @@ const LayersPanel = ({
   });
 
   // ---- search ----
-  const results = useSearch(q, active, activeId);
-  const pick = (h: Hit) => {
-    selectIn(h.iframe, h.row.id);
-    setQuery(""); // back to the tree: selecting reveals the row there
+  const results = useSearch(q, active);
+  // picking a result selects it and keeps the search open
+  const pick = (id: string) => {
+    if (active) selectIn(active, id);
   };
 
   // ---- keyboard (tree pattern): up/down, left/right, home/end, enter ----
@@ -211,7 +215,9 @@ const LayersPanel = ({
       </div>
     );
   } else if (q) {
-    body = <SearchResults results={results} onPick={pick} />;
+    body = (
+      <SearchResults results={results} iframe={active} q={q} onPick={pick} />
+    );
   } else {
     body = (
       <>
@@ -293,7 +299,10 @@ const LayersPanel = ({
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Escape") setQuery("");
-              if (e.key === "Enter" && results?.hits[0]) pick(results.hits[0]);
+              if (e.key === "Enter") {
+                const first = results?.rows.find((r) => r.match);
+                if (first) pick(first.id);
+              }
             }}
             placeholder="Search layers"
             aria-label="Search layers"

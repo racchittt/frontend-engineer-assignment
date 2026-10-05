@@ -9,11 +9,14 @@ import { fail, LAYERS } from "../../regions";
 export function useRevealOnSelect(
   iframeRefs: RefObject<Map<string, HTMLIFrameElement>>,
   onRevealed: (key: string) => void,
+  paused: boolean, // while searching the tree is left as it was, so clearing restores it
 ) {
   const last = useRef("");
   const callback = useRef(onRevealed);
+  const isPaused = useRef(paused);
   useEffect(() => {
     callback.current = onRevealed;
+    isPaused.current = paused;
   });
 
   useEffect(
@@ -38,6 +41,7 @@ export function useRevealOnSelect(
         const key = `${screenId}:${id}`;
         if (key === last.current) return; // RECT_UPDATE fires a lot
         last.current = key;
+        if (isPaused.current) return; // searching: remember it, but leave the tree as it was
         reveal(iframe, id)
           .then((ok) => {
             // a newer selection may have replaced this one while we waited

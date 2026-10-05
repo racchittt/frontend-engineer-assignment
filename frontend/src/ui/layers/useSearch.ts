@@ -1,27 +1,24 @@
 import { useEffect, useRef, useState } from "react";
-import { search, type Hit } from "../../agent/tree";
+import { queryAgent } from "../../agent/connection";
+import type { SearchRow } from "../../protocol";
 import { guard, LAYERS } from "../../regions";
 
 // Search the active preview. The agent scans its whole DOM, because the tree only has
 // the rows that were loaded. Returns null while the answer for `query` is still on its way.
-export function useSearch(
-  query: string,
-  active: HTMLIFrameElement | null,
-  activeId: string | undefined,
-) {
+export function useSearch(query: string, active: HTMLIFrameElement | null) {
   const [found, setFound] = useState<{
     q: string;
-    hits: Hit[];
+    rows: SearchRow[];
     total: number;
   } | null>(null);
   const seq = useRef(0);
 
   useEffect(() => {
     const mine = ++seq.current; // bumped on every change, so an older reply can't land late
-    if (!query || !active || !activeId) return;
+    if (!query || !active) return;
     const t = setTimeout(() => {
       guard(LAYERS, () =>
-        search(active, query).then(
+        queryAgent(active, "SEARCH", { q: query }).then(
           (r) => {
             if (mine === seq.current) setFound({ q: query, ...r });
           },
@@ -33,7 +30,7 @@ export function useSearch(
       )();
     }, 250); // debounce
     return () => clearTimeout(t);
-  }, [query, active, activeId]);
+  }, [query, active]);
 
   return query && found?.q === query ? found : null;
 }
