@@ -9,9 +9,8 @@ Stack: React 19, TypeScript, Vite, Tailwind. The agent inside each page is plain
 ## Run it
 
 ```
-npm install            # installs `concurrently`
-cd frontend && npm install # installs frontend dependencies
-npm run dev            # backend + frontend together
+# installs `concurrently` and postinstall adds frontend deps too
+npm install && npm run dev 
 ```
 
 | What | URL |

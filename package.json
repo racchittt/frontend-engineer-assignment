@@ -6,6 +6,7 @@
     "node": ">=18"
   },
   "scripts": {
+    "postinstall": "npm --prefix frontend install",
     "backend": "node backend/server.js",
     "dev": "concurrently \"npm run backend\" \"npm run frontend\"",
     "frontend": "cd frontend && npm run dev"
